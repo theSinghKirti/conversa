@@ -1,16 +1,4 @@
-/**
- * sendMessageEmail
- *
- * Fire-and-forget email notification helper.
- *
- * Rules:
- *  - Only called when the receiver has NO open sockets (truly offline).
- *  - Only called when receiver.emailNotificationsEnabled === true.
- *  - Never awaited in the socket path so the real message is emitted
- *    with zero extra latency.
- */
-
-const { transporter, logSafeSmtpError, EMAIL } = require("./emailTransporter.js");
+const { sendEmail } = require("./emailService.js");
 const { FRONTEND_URL } = require("../secrets.js");
 
 /**
@@ -105,17 +93,12 @@ const sendMessageEmail = (receiver, sender, messageText, conversationId) => {
 </body>
 </html>`;
 
-    // Intentionally NOT awaited — fire and forget
-    transporter
-        .sendMail({
-            from: `"Conversa" <${EMAIL}>`,
-            to: receiver.email,
-            subject: `💬 ${sender.name} sent you a message on Conversa`,
-            html,
-        })
-        .catch((err) => {
-            logSafeSmtpError("sendMessageEmail", err);
-        });
+    // Fire and forget
+    sendEmail({
+        to: receiver.email,
+        subject: `💬 ${sender.name} sent you a message on Conversa`,
+        html,
+    });
 };
 
 module.exports = sendMessageEmail;

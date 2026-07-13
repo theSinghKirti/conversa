@@ -1,4 +1,4 @@
-const { transporter, logSafeSmtpError, EMAIL } = require("./emailTransporter.js");
+const { sendEmail } = require("./emailService.js");
 const { FRONTEND_URL } = require("../secrets.js");
 
 /**
@@ -8,20 +8,12 @@ const { FRONTEND_URL } = require("../secrets.js");
  * @returns {Promise<{success: boolean, error?: string}>}
  */
 const sendActivationInvite = async (application) => {
-  if (!EMAIL || !process.env.PASSWORD) {
-    console.error("sendActivationInvite error: EMAIL or PASSWORD environment variables not configured.");
-    return { success: false, error: "SMTP settings not configured on server" };
-  }
-
   const encodedMemberId = encodeURIComponent(application.memberId);
   const encodedEmail = encodeURIComponent(application.email);
   const activationUrl = `${FRONTEND_URL}/activate?memberId=${encodedMemberId}&email=${encodedEmail}`;
 
-  const mailOptions = {
-    from: `"Conversa Community" <${EMAIL}>`,
-    to: application.email,
-    subject: "Your Community Membership Has Been Approved",
-    html: `<!DOCTYPE html>
+  const subject = "Your Community Membership Has Been Approved";
+  const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -96,30 +88,13 @@ const sendActivationInvite = async (application) => {
     </tr>
   </table>
 </body>
-</html>`,
-  };
+</html>`;
 
-  try {
-    if (application.email.endsWith("@example.com")) {
-      console.log(`\n==================================================`);
-      console.log(`[DEV/TEST ONLY] ACTIVATION LINK FOR ${application.email}:`);
-      console.log(`${activationUrl}`);
-      console.log(`==================================================\n`);
-      return { success: true };
-    }
-    await transporter.sendMail(mailOptions);
+  const result = await sendEmail({ to: application.email, subject, html });
+  if (result.success) {
     return { success: true };
-  } catch (error) {
-    if (application.email.endsWith("@example.com")) {
-      console.log(`\n==================================================`);
-      console.log(`[DEV/TEST ONLY] ACTIVATION LINK FOR ${application.email}:`);
-      console.log(`${activationUrl} (SMTP failed)`);
-      console.log(`==================================================\n`);
-      return { success: true };
-    }
-    logSafeSmtpError("sendActivationInvite", error);
-    return { success: false, error: "Failed to deliver activation invitation email. System SMTP service might be temporarily unavailable or misconfigured." };
   }
+  return { success: false, error: result.error || "Failed to deliver activation invitation email." };
 };
 
 module.exports = sendActivationInvite;

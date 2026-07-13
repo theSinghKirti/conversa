@@ -18,6 +18,8 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3-flash-preview";
 const EMAIL = process.env.EMAIL;
 const PASSWORD = process.env.PASSWORD;
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const EMAIL_FROM = process.env.EMAIL_FROM;
 const AWS_BUCKET_NAME = process.env.AWS_BUCKET_NAME;
 const AWS_ACCESS_KEY = process.env.AWS_ACCESS_KEY;
 const AWS_SECRET = process.env.AWS_SECRET;
@@ -50,6 +52,8 @@ const validateEnv = () => {
     "MONGO_DB_NAME",
     "EMAIL",
     "PASSWORD",
+    "RESEND_API_KEY",
+    "EMAIL_FROM",
     "AWS_BUCKET_NAME",
     "AWS_ACCESS_KEY",
     "AWS_SECRET",
@@ -76,6 +80,8 @@ module.exports = {
   GEMINI_MODEL,
   EMAIL,
   PASSWORD,
+  RESEND_API_KEY,
+  EMAIL_FROM,
   AWS_BUCKET_NAME,
   FRONTEND_URL,
   validateEnv,

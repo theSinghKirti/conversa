@@ -5,7 +5,7 @@ const MembershipApplication = require("../Models/MembershipApplication.js");
 const User = require("../Models/User.js");
 const Conversation = require("../Models/Conversation.js");
 const { JWT_SECRET } = require("../secrets.js");
-const { transporter, logSafeSmtpError, EMAIL } = require("../utils/emailTransporter.js");
+const { sendEmail } = require("../utils/emailService.js");
 
 /**
  * Generate a 6-digit numeric OTP.
@@ -118,27 +118,22 @@ const requestActivationOtp = async (req, res) => {
     };
 
     try {
-      // Mock sending email in development/test environment or for mock emails
-      if (application.email.endsWith("@example.com")) {
-        console.log(`\n==================================================`);
-        console.log(`[DEV/TEST ONLY] ACTIVATION OTP FOR ${application.email}: ${rawOtp}`);
-        console.log(`==================================================\n`);
-      } else {
-        await transporter.sendMail(mailOptions);
-      }
-    } catch (mailErr) {
-      // Fallback to console print if SMTP fails for non-production domains
-      if (application.email.endsWith("@example.com")) {
-        console.log(`\n==================================================`);
-        console.log(`[DEV/TEST ONLY] ACTIVATION OTP FOR ${application.email}: ${rawOtp} (SMTP failed)`);
-        console.log(`==================================================\n`);
-      } else {
-        logSafeSmtpError("requestActivationOtp", mailErr);
+      const result = await sendEmail({
+        to: application.email,
+        subject: `Your Membership Activation Code – ${rawOtp}`,
+        html: mailOptions.html
+      });
+      if (!result.success) {
         return res.status(500).json({
           success: false,
-          error: "Failed to deliver activation OTP. System SMTP service might be temporarily unavailable or misconfigured.",
+          error: `Failed to deliver activation OTP: ${result.error}`,
         });
       }
+    } catch (mailErr) {
+      return res.status(500).json({
+        success: false,
+        error: "Failed to deliver activation OTP due to internal server error.",
+      });
     }
 
     return res.status(200).json({

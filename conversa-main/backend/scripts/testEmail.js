@@ -1,9 +1,9 @@
 const path = require("path");
 const dotenv = require("dotenv");
-// Load local .env if available
+// Load environment variables relative to current directory
 dotenv.config({ path: path.join(__dirname, "../.env") });
 
-const { transporter, verifyTransporter, logSafeSmtpError } = require("../utils/emailTransporter.js");
+const { sendEmail, isResendConfigured, isNodemailerConfigured } = require("../utils/emailService.js");
 
 const recipient = process.argv[2];
 if (!recipient) {
@@ -13,37 +13,45 @@ if (!recipient) {
 }
 
 const run = async () => {
-  console.log("=== SMTP DIAGNOSTIC START ===");
-  console.log(`Testing SMTP with user: ${process.env.EMAIL || "Not configured"}`);
-  
-  // 1. Verify SMTP connection
-  const isReady = await verifyTransporter();
-  if (!isReady) {
-    console.error("SMTP transporter verification failed. Cannot proceed with sending email.");
-    process.exit(1);
+  console.log("=== EMAIL DIAGNOSTIC START ===");
+  console.log(`[Config Check] Resend Configured: ${isResendConfigured}`);
+  console.log(`[Config Check] Nodemailer Fallback Configured: ${isNodemailerConfigured}`);
+
+  if (!isResendConfigured && !isNodemailerConfigured) {
+    console.warn("WARNING: Neither Resend nor Nodemailer are configured. Falling back to console-only mock.");
   }
 
-  // 2. Try sending test email
+  // Define diagnostic payload
   const mailOptions = {
-    from: `"Conversa SMTP Test" <${process.env.EMAIL}>`,
     to: recipient,
-    subject: "Conversa SMTP Diagnostic Test Email",
-    text: "Hello! This is a diagnostic test email to verify that Conversa's SMTP configuration is working properly on Render.",
-    html: "<p>Hello! This is a diagnostic test email to verify that Conversa's SMTP configuration is working properly on Render.</p>"
+    subject: "Conversa Email Service Diagnostic Test",
+    html: `<!DOCTYPE html>
+<html>
+<head>
+  <title>Diagnostic Test</title>
+</head>
+<body style="font-family: sans-serif; padding: 20px;">
+  <h2 style="color: #6366f1;">Conversa Delivery Verification</h2>
+  <p>This is a diagnostic email dispatched to verify your new email integration.</p>
+  <p><strong>Method:</strong> ${isResendConfigured ? "Resend HTTPS API" : isNodemailerConfigured ? "Nodemailer SMTP Fallback" : "Console Sandbox Mock"}</p>
+  <p>Dispatched At: ${new Date().toISOString()}</p>
+</body>
+</html>`
   };
 
-  console.log(`Sending diagnostic email to: ${recipient}...`);
-  try {
-    const info = await transporter.sendMail(mailOptions);
-    console.log("SMTP Send Email Success:", {
-      messageId: info.messageId,
-      response: info.response,
-      envelope: info.envelope
+  console.log(`Attempting email delivery to: ${recipient}...`);
+  const result = await sendEmail(mailOptions);
+
+  if (result.success) {
+    console.log("=== EMAIL DIAGNOSTIC SUCCESS ===");
+    console.log("Details:", {
+      messageId: result.messageId
     });
-    console.log("=== SMTP DIAGNOSTIC SUCCESS ===");
-  } catch (error) {
-    logSafeSmtpError("DiagnosticTestEmail", error);
-    console.error("=== SMTP DIAGNOSTIC FAILED ===");
+  } else {
+    console.error("=== EMAIL DIAGNOSTIC FAILED ===");
+    console.error("Details:", {
+      error: result.error
+    });
     process.exit(1);
   }
 };

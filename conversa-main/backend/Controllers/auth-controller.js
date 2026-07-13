@@ -3,7 +3,7 @@ const jwt = require("jsonwebtoken");
 const User = require("../Models/User.js");
 const Conversation = require("../Models/Conversation.js");
 const { JWT_SECRET } = require("../secrets.js");
-const { transporter: mailTransporter, logSafeSmtpError, EMAIL } = require("../utils/emailTransporter.js");
+const { sendEmail } = require("../utils/emailService.js");
 
 
 const register = async (req, res) => {
@@ -309,13 +309,20 @@ const sendotp = async (req, res) => {
   </html>`,
     };
 
-    // Use promise-based approach
+    // Send email via service
     try {
-      await mailTransporter.sendMail(mailDetails);
-      return res.status(200).json({ message: "OTP sent" });
+      const result = await sendEmail({
+        to: user.email,
+        subject: `Your Conversa login code – OTP: ${otp}`,
+        html: mailDetails.html
+      });
+      if (result.success) {
+        return res.status(200).json({ message: "OTP sent" });
+      } else {
+        return res.status(500).json({ message: `Failed to send OTP: ${result.error}` });
+      }
     } catch (err) {
-      logSafeSmtpError("sendotp", err);
-      return res.status(500).json({ message: "Failed to send OTP. System SMTP service might be temporarily unavailable or misconfigured." });
+      return res.status(500).json({ message: "Failed to send OTP due to internal error." });
     }
   } catch (error) {
     console.error(error.message);
@@ -406,11 +413,18 @@ const sendVerificationOtp = async (req, res) => {
     };
 
     try {
-      await mailTransporter.sendMail(mailDetails);
-      return res.status(200).json({ message: "Verification OTP sent" });
+      const result = await sendEmail({
+        to: user.email,
+        subject: `Verify your Conversa email – OTP: ${otp}`,
+        html: mailDetails.html
+      });
+      if (result.success) {
+        return res.status(200).json({ message: "Verification OTP sent" });
+      } else {
+        return res.status(500).json({ message: `Failed to send OTP: ${result.error}` });
+      }
     } catch (err) {
-      logSafeSmtpError("sendVerificationOtp", err);
-      return res.status(500).json({ message: "Failed to send OTP. System SMTP service might be temporarily unavailable or misconfigured." });
+      return res.status(500).json({ message: "Failed to send OTP due to internal error." });
     }
   } catch (error) {
     console.error(error.message);
