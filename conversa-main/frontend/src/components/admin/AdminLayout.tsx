@@ -15,7 +15,8 @@ import {
     UserCheck,
     History,
     ShieldAlert,
-    User
+    User,
+    MessagesSquare
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -241,11 +242,22 @@ export default function AdminLayout() {
                 </nav>
 
                 {/* Logged in User Profile + Logout */}
-                <div className="border-t p-4 space-y-3 bg-muted/40">
-                    <div className="min-w-0 px-2">
+                <div className="border-t p-4 space-y-2 bg-muted/40">
+                    <div className="min-w-0 px-2 pb-1">
                         <p className="text-sm font-semibold truncate">{user?.name}</p>
                         <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
                     </div>
+                    <Button
+                        variant="outline"
+                        className="w-full justify-start gap-2 text-sm border-primary/20 text-primary hover:bg-primary/10"
+                        onClick={() => {
+                            setMobileOpen(false);
+                            navigate("/user/conversations");
+                        }}
+                    >
+                        <MessagesSquare className="size-4" />
+                        <span>Back to Community</span>
+                    </Button>
                     <Button
                         variant="destructive"
                         className="w-full justify-start gap-2 text-sm"

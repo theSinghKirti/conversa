@@ -64,7 +64,13 @@ export default function Login() {
 
     // Redirect if already logged in
     useEffect(() => {
-        if (user) navigate("/user/conversations", { replace: true })
+        if (user) {
+            if (user.role === "ADMIN") {
+                navigate("/admin", { replace: true })
+            } else {
+                navigate("/user/conversations", { replace: true })
+            }
+        }
     }, [user, navigate])
 
     // OTP countdown ticker

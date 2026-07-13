@@ -1,11 +1,12 @@
 import type { ReactNode } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { Loader2, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default function AdminRoute({ children }: { children: ReactNode }) {
     const { user, isUserLoading, logout } = useAuth();
+    const navigate = useNavigate();
 
     if (isUserLoading) {
         return (
@@ -36,7 +37,10 @@ export default function AdminRoute({ children }: { children: ReactNode }) {
                         </p>
                     </div>
                     <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                        <Button variant="default" onClick={() => logout()}>
+                        <Button variant="outline" onClick={() => navigate("/user/conversations")}>
+                            Return to Community
+                        </Button>
+                        <Button variant="destructive" onClick={() => logout()}>
                             Log Out
                         </Button>
                     </div>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Eye, EyeOff, Shield, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -12,13 +12,24 @@ import { authApi } from "@/lib/api";
 
 export default function AdminLogin() {
     const navigate = useNavigate();
-    const { login, logout } = useAuth();
+    const { login, logout, user } = useAuth();
 
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [showPass, setShowPass] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    // Redirect if already logged in
+    useEffect(() => {
+        if (user) {
+            if (user.role === "ADMIN") {
+                navigate("/admin", { replace: true });
+            } else {
+                navigate("/user/conversations", { replace: true });
+            }
+        }
+    }, [user, navigate]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -114,7 +125,7 @@ export default function AdminLogin() {
                 return;
             }
 
-            navigate("/admin/applications", { replace: true });
+            navigate("/admin", { replace: true });
         } catch (err: unknown) {
             const message = err instanceof Error ? err.message : "Invalid credentials.";
             setError(message);

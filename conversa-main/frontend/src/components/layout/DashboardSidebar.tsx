@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { Bot, ContactRound, Inbox, LogOut, MessagesSquare, Settings, Star } from "lucide-react"
+import { Bot, ContactRound, Inbox, LogOut, MessagesSquare, Settings, Star, Shield } from "lucide-react"
 import {
     Sidebar,
     SidebarContent,
@@ -115,6 +115,19 @@ export default function DashboardSidebar() {
                                     </SidebarMenuItem>
                                 )
                             })}
+                            {user?.role === "ADMIN" && (
+                                <SidebarMenuItem title="Admin Dashboard" key="admin-dashboard" className="min-w-10 min-h-10 mb-2">
+                                    <SidebarMenuButton
+                                        asChild
+                                        className="min-w-10 min-h-10 p-4 bg-primary/10 text-primary hover:bg-primary/20 hover:text-primary border border-primary/20"
+                                    >
+                                        <Link to="/admin" className="flex items-center gap-2">
+                                            <Shield className="min-h-5 min-w-5 shrink-0" />
+                                            <span>Admin Dashboard</span>
+                                        </Link>
+                                    </SidebarMenuButton>
+                                </SidebarMenuItem>
+                            )}
                             <Separator className="mt-1 mb-3" />
                             <SidebarMenuItem title="AI Chatbot" key={"ai-chatbot"} className="min-w-10 min-h-10">
                                 <SidebarMenuButton

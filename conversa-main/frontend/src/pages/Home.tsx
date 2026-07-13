@@ -5,7 +5,12 @@ import { useAuth } from "@/hooks/use-auth"
 const Home = () => {
     const { user } = useAuth()
 
-    if (user) return <Navigate to="/user/conversations" replace />
+    if (user) {
+        if (user.role === "ADMIN") {
+            return <Navigate to="/admin" replace />;
+        }
+        return <Navigate to="/user/conversations" replace />;
+    }
 
     return (
         <div className="h-full overflow-hidden flex flex-col">
