@@ -100,7 +100,7 @@ const sendActivationInvite = async (application) => {
   };
 
   try {
-    if (process.env.NODE_ENV !== "production" || application.email.endsWith("@example.com")) {
+    if (application.email.endsWith("@example.com")) {
       console.log(`\n==================================================`);
       console.log(`[DEV/TEST ONLY] ACTIVATION LINK FOR ${application.email}:`);
       console.log(`${activationUrl}`);
@@ -110,7 +110,7 @@ const sendActivationInvite = async (application) => {
     await transporter.sendMail(mailOptions);
     return { success: true };
   } catch (error) {
-    if (process.env.NODE_ENV !== "production" || application.email.endsWith("@example.com")) {
+    if (application.email.endsWith("@example.com")) {
       console.log(`\n==================================================`);
       console.log(`[DEV/TEST ONLY] ACTIVATION LINK FOR ${application.email}:`);
       console.log(`${activationUrl} (SMTP failed)`);

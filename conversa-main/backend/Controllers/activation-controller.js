@@ -119,7 +119,7 @@ const requestActivationOtp = async (req, res) => {
 
     try {
       // Mock sending email in development/test environment or for mock emails
-      if (process.env.NODE_ENV !== "production" || application.email.endsWith("@example.com")) {
+      if (application.email.endsWith("@example.com")) {
         console.log(`\n==================================================`);
         console.log(`[DEV/TEST ONLY] ACTIVATION OTP FOR ${application.email}: ${rawOtp}`);
         console.log(`==================================================\n`);
@@ -128,7 +128,7 @@ const requestActivationOtp = async (req, res) => {
       }
     } catch (mailErr) {
       // Fallback to console print if SMTP fails for non-production domains
-      if (process.env.NODE_ENV !== "production" || application.email.endsWith("@example.com")) {
+      if (application.email.endsWith("@example.com")) {
         console.log(`\n==================================================`);
         console.log(`[DEV/TEST ONLY] ACTIVATION OTP FOR ${application.email}: ${rawOtp} (SMTP failed)`);
         console.log(`==================================================\n`);

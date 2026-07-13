@@ -1,3 +1,7 @@
+const path = require("path");
+const dotenv = require("dotenv");
+dotenv.config({ path: path.join(__dirname, "../.env") });
+
 const nodemailer = require("nodemailer");
 
 // 1. Check if EMAIL and PASSWORD environment variables are configured
