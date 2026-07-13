@@ -8,15 +8,26 @@ const { startStaleOnlineUsersJob } = require("./jobs/staleOnlineUsers.js");
 const { ALLOWED_ORIGINS, validateEnv } = require("./secrets.js");
 
 const app = express();
+
+app.set("trust proxy", 1);
+
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://conversa-nu-taupe.vercel.app",
+  process.env.FRONTEND_URL,
+].filter(Boolean);
+
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+      if (!origin || allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
-      return callback(new Error("Not allowed by CORS"));
+      return callback(new Error(`CORS blocked origin: ${origin}`));
     },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "auth-token"],
   })
 );
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));

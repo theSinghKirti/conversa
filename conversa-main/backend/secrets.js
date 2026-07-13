@@ -26,6 +26,8 @@ const FRONTEND_URL =
 
 const ALLOWED_ORIGINS = Array.from(
   new Set([
+    "http://localhost:5173",
+    "https://conversa-nu-taupe.vercel.app",
     ...splitOrigins(CORS_ORIGIN),
     FRONTEND_URL,
     !isProduction ? LOCAL_FRONTEND_URL : "",
