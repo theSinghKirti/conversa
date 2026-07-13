@@ -18,8 +18,9 @@ const normalisedPassword = rawPassword.replace(/\s+/g, "");
 // 3. Configure Gmail SMTP transport with requested parameters and custom timeouts
 const transporter = nodemailer.createTransport({
   host: "smtp.gmail.com",
-  port: 465,
-  secure: true,
+  port: 587,
+  secure: false,
+  requireTLS: true,
   auth: {
     user: process.env.EMAIL || "",
     pass: normalisedPassword,
