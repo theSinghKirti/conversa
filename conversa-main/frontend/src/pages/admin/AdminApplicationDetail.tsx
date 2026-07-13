@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, Check, X, Shield, MapPin, Briefcase, Award, Mail } from "lucide-react";
+import { ArrowLeft, Check, X, Shield, MapPin, Briefcase, Award, Mail, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -157,6 +157,8 @@ export default function AdminApplicationDetail() {
                 return <Badge className="bg-emerald-500 hover:bg-emerald-600">Active</Badge>;
             case "REJECTED":
                 return <Badge variant="destructive">Rejected</Badge>;
+            case "SUSPENDED":
+                return <Badge className="bg-zinc-500 hover:bg-zinc-600">Suspended</Badge>;
             default:
                 return <Badge variant="secondary">{statusVal}</Badge>;
         }
@@ -312,13 +314,27 @@ export default function AdminApplicationDetail() {
                             </div>
                             
                             {application.memberId && (
-                                <div>
-                                    <span className="text-muted-foreground block">Assigned Member ID</span>
-                                    <span className="font-mono font-bold text-lg text-primary tracking-wider mt-0.5 block">
-                                        {application.memberId}
-                                    </span>
-                                </div>
-                            )}
+                                 <div>
+                                     <span className="text-muted-foreground block">Assigned Member ID</span>
+                                     <div className="flex items-center gap-2 mt-1">
+                                         <span className="font-mono font-bold text-lg text-primary tracking-wider">
+                                             {application.memberId}
+                                         </span>
+                                         <Button
+                                             variant="outline"
+                                             size="icon"
+                                             className="size-7"
+                                             onClick={() => {
+                                                 navigator.clipboard.writeText(application.memberId!);
+                                                 toast.success("Member ID copied to clipboard");
+                                             }}
+                                             title="Copy Member ID"
+                                         >
+                                             <Copy className="size-3.5" />
+                                         </Button>
+                                     </div>
+                                 </div>
+                             )}
 
                             {application.status === "APPROVED_PENDING_VERIFICATION" && (
                                 <div className="space-y-1.5">

@@ -26,6 +26,13 @@ import CommunityInbox from "./pages/CommunityInbox";
 import CommunityPostDetail from "./pages/CommunityPostDetail";
 import AdminInbox from "./pages/admin/AdminInbox";
 import AdminInboxPostDetail from "./pages/admin/AdminInboxPostDetail";
+import AdminDashboardOverview from "./pages/admin/AdminDashboardOverview";
+import AdminActiveMembers from "./pages/admin/AdminActiveMembers";
+import AdminUsers from "./pages/admin/AdminUsers";
+import AdminEmergency from "./pages/admin/AdminEmergency";
+import AdminAuditLogs from "./pages/admin/AdminAuditLogs";
+import AdminSecurityLogs from "./pages/admin/AdminSecurityLogs";
+import AdminProfile from "./pages/admin/AdminProfile";
 
 export function App() {
 
@@ -72,11 +79,17 @@ export function App() {
             </AdminRoute>
           }
         >
-          <Route index element={<Navigate to="/admin/applications" replace />} />
+          <Route index element={<AdminDashboardOverview />} />
           <Route path="applications" element={<AdminApplications />} />
           <Route path="applications/:applicationId" element={<AdminApplicationDetail />} />
+          <Route path="members" element={<AdminActiveMembers />} />
+          <Route path="users" element={<AdminUsers />} />
           <Route path="inbox" element={<AdminInbox />} />
           <Route path="inbox/:postId" element={<AdminInboxPostDetail />} />
+          <Route path="emergency" element={<AdminEmergency />} />
+          <Route path="audit-logs" element={<AdminAuditLogs />} />
+          <Route path="security-logs" element={<AdminSecurityLogs />} />
+          <Route path="profile" element={<AdminProfile />} />
         </Route>
       </Route>
     </Routes>

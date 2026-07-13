@@ -1,6 +1,22 @@
-import { Link, Outlet, useNavigate, useLocation } from "react-router-dom";
+import { Link, Outlet, useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
-import { ClipboardList, Inbox, LogOut, Menu, X, Shield } from "lucide-react";
+import {
+    ClipboardList,
+    Inbox,
+    LogOut,
+    Menu,
+    X,
+    Shield,
+    LayoutDashboard,
+    FileCheck,
+    FileX,
+    Users,
+    AlertOctagon,
+    UserCheck,
+    History,
+    ShieldAlert,
+    User
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 
@@ -8,6 +24,7 @@ export default function AdminLayout() {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
+    const [searchParams] = useSearchParams();
     const [mobileOpen, setMobileOpen] = useState(false);
 
     const handleLogout = () => {
@@ -15,7 +32,18 @@ export default function AdminLayout() {
         navigate("/admin/login", { replace: true });
     };
 
-    const isActive = (path: string) => location.pathname.startsWith(path);
+    const isActive = (path: string, status?: string) => {
+        if (status) {
+            return location.pathname.startsWith(path) && searchParams.get("status") === status;
+        }
+        if (path === "/admin") {
+            return location.pathname === "/admin";
+        }
+        if (path === "/admin/applications") {
+            return location.pathname.startsWith("/admin/applications") && !searchParams.get("status");
+        }
+        return location.pathname.startsWith(path);
+    };
 
     return (
         <div className="flex h-dvh w-dvw flex-col overflow-hidden bg-background text-foreground md:flex-row">
@@ -51,12 +79,29 @@ export default function AdminLayout() {
                 </div>
 
                 {/* Navigation */}
-                <nav className="flex-1 space-y-1 px-4 py-6">
+                <nav className="flex-1 overflow-y-auto space-y-0.5 px-4 py-6 thin-scrollbar">
                     <Link
-                        to="/admin/applications"
+                        to="/admin"
                         onClick={() => setMobileOpen(false)}
-                        className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors ${
-                            isActive("/admin/applications")
+                        className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                            isActive("/admin")
+                                ? "bg-primary text-primary-foreground"
+                                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                        }`}
+                    >
+                        <LayoutDashboard className="size-4 shrink-0" />
+                        <span>Dashboard Overview</span>
+                    </Link>
+
+                    <div className="pt-2 pb-1">
+                        <p className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Applications</p>
+                    </div>
+
+                    <Link
+                        to="/admin/applications?status=PENDING"
+                        onClick={() => setMobileOpen(false)}
+                        className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                            isActive("/admin/applications", "PENDING")
                                 ? "bg-primary text-primary-foreground"
                                 : "text-muted-foreground hover:bg-muted hover:text-foreground"
                         }`}
@@ -64,10 +109,71 @@ export default function AdminLayout() {
                         <ClipboardList className="size-4 shrink-0" />
                         <span>Pending Applications</span>
                     </Link>
+
+                    <Link
+                        to="/admin/applications?status=APPROVED_PENDING_VERIFICATION"
+                        onClick={() => setMobileOpen(false)}
+                        className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                            isActive("/admin/applications", "APPROVED_PENDING_VERIFICATION")
+                                ? "bg-primary text-primary-foreground"
+                                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                        }`}
+                    >
+                        <FileCheck className="size-4 shrink-0" />
+                        <span>Approved Applications</span>
+                    </Link>
+
+                    <Link
+                        to="/admin/applications?status=REJECTED"
+                        onClick={() => setMobileOpen(false)}
+                        className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                            isActive("/admin/applications", "REJECTED")
+                                ? "bg-primary text-primary-foreground"
+                                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                        }`}
+                    >
+                        <FileX className="size-4 shrink-0" />
+                        <span>Rejected Applications</span>
+                    </Link>
+
+                    <div className="pt-3 pb-1">
+                        <p className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Members & Users</p>
+                    </div>
+
+                    <Link
+                        to="/admin/members"
+                        onClick={() => setMobileOpen(false)}
+                        className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                            isActive("/admin/members")
+                                ? "bg-primary text-primary-foreground"
+                                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                        }`}
+                    >
+                        <Users className="size-4 shrink-0" />
+                        <span>Active Members</span>
+                    </Link>
+
+                    <Link
+                        to="/admin/users"
+                        onClick={() => setMobileOpen(false)}
+                        className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                            isActive("/admin/users")
+                                ? "bg-primary text-primary-foreground"
+                                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                        }`}
+                    >
+                        <UserCheck className="size-4 shrink-0" />
+                        <span>Users / Members</span>
+                    </Link>
+
+                    <div className="pt-3 pb-1">
+                        <p className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Moderation</p>
+                    </div>
+
                     <Link
                         to="/admin/inbox"
                         onClick={() => setMobileOpen(false)}
-                        className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors ${
+                        className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
                             isActive("/admin/inbox")
                                 ? "bg-primary text-primary-foreground"
                                 : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -75,6 +181,62 @@ export default function AdminLayout() {
                     >
                         <Inbox className="size-4 shrink-0" />
                         <span>Community Inbox</span>
+                    </Link>
+
+                    <Link
+                        to="/admin/emergency"
+                        onClick={() => setMobileOpen(false)}
+                        className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                            isActive("/admin/emergency")
+                                ? "bg-primary text-primary-foreground"
+                                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                        }`}
+                    >
+                        <AlertOctagon className="size-4 shrink-0 text-amber-500" />
+                        <span>Emergency Messages</span>
+                    </Link>
+
+                    <div className="pt-3 pb-1">
+                        <p className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">System</p>
+                    </div>
+
+                    <Link
+                        to="/admin/audit-logs"
+                        onClick={() => setMobileOpen(false)}
+                        className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                            isActive("/admin/audit-logs")
+                                ? "bg-primary text-primary-foreground"
+                                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                        }`}
+                    >
+                        <History className="size-4 shrink-0" />
+                        <span>Audit Logs</span>
+                    </Link>
+
+                    <Link
+                        to="/admin/security-logs"
+                        onClick={() => setMobileOpen(false)}
+                        className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                            isActive("/admin/security-logs")
+                                ? "bg-primary text-primary-foreground"
+                                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                        }`}
+                    >
+                        <ShieldAlert className="size-4 shrink-0" />
+                        <span>Security Logs</span>
+                    </Link>
+
+                    <Link
+                        to="/admin/profile"
+                        onClick={() => setMobileOpen(false)}
+                        className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                            isActive("/admin/profile")
+                                ? "bg-primary text-primary-foreground"
+                                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                        }`}
+                    >
+                        <User className="size-4 shrink-0" />
+                        <span>Admin Profile</span>
                     </Link>
                 </nav>
 

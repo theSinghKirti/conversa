@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Search, RotateCw, Eye, Check, X, ClipboardList, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,28 +45,30 @@ import { Textarea } from "@/components/ui/textarea";
 import { adminApi } from "@/lib/api";
 import type { MembershipApplication, ApplicationStatus } from "@/lib/api";
 import { toast } from "sonner";
-
+ 
 export default function AdminApplications() {
+    const [searchParams, setSearchParams] = useSearchParams();
+    const status = (searchParams.get("status") as ApplicationStatus) || "PENDING";
+ 
     // ── query state ──────────────────────────────────────────────────
-    const [status, setStatus] = useState<ApplicationStatus>("PENDING");
     const [search, setSearch] = useState("");
     const [searchInput, setSearchInput] = useState("");
     const [page, setPage] = useState(1);
-
+ 
     // ── data state ───────────────────────────────────────────────────
     const [applications, setApplications] = useState<MembershipApplication[]>([]);
     const [total, setTotal] = useState(0);
     const [totalPages, setTotalPages] = useState(1);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-
+ 
     // ── action state ─────────────────────────────────────────────────
     const [actionLoading, setActionLoading] = useState(false);
     const [appToApprove, setAppToApprove] = useState<MembershipApplication | null>(null);
     const [appToReject, setAppToReject] = useState<MembershipApplication | null>(null);
     const [rejectionReason, setRejectionReason] = useState("");
     const [rejectionError, setRejectionError] = useState<string | null>(null);
-
+ 
     // ── fetch data ───────────────────────────────────────────────────
     const fetchApplications = useCallback(async () => {
         setIsLoading(true);
@@ -171,6 +173,8 @@ export default function AdminApplications() {
                 return <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">Active</Badge>;
             case "REJECTED":
                 return <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20">Rejected</Badge>;
+            case "SUSPENDED":
+                return <Badge variant="outline" className="bg-zinc-500/10 text-zinc-600 dark:text-zinc-400 border-zinc-500/20">Suspended</Badge>;
             default:
                 return <Badge variant="outline">{statusVal}</Badge>;
         }
@@ -221,17 +225,22 @@ export default function AdminApplications() {
                             <Select
                                 value={status}
                                 onValueChange={(val) => {
-                                    setStatus(val as ApplicationStatus);
+                                    const next = new URLSearchParams(searchParams);
+                                    next.set("status", val);
+                                    next.set("page", "1");
+                                    setSearchParams(next);
                                     setPage(1);
                                 }}
                             >
-                                <SelectTrigger className="w-[180px]">
+                                <SelectTrigger className="w-[200px]">
                                     <SelectValue placeholder="Status Filter" />
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="PENDING">Pending</SelectItem>
-                                    <SelectItem value="APPROVED_PENDING_VERIFICATION">Approved</SelectItem>
+                                    <SelectItem value="APPROVED_PENDING_VERIFICATION">Approved (Pending Verification)</SelectItem>
+                                    <SelectItem value="ACTIVE">Active Members</SelectItem>
                                     <SelectItem value="REJECTED">Rejected</SelectItem>
+                                    <SelectItem value="SUSPENDED">Suspended</SelectItem>
                                 </SelectContent>
                             </Select>
 
