@@ -1,22 +1,9 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const nodemailer = require("nodemailer");
 const User = require("../Models/User.js");
 const Conversation = require("../Models/Conversation.js");
-const { JWT_SECRET, EMAIL, PASSWORD } = require("../secrets.js");
-
-let mailTransporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 465,
-  secure: true,
-  auth: {
-    user: EMAIL,
-    pass: PASSWORD,
-  },
-  connectionTimeout: 120000,
-  greetingTimeout: 120000,
-  socketTimeout: 120000
-});
+const { JWT_SECRET } = require("../secrets.js");
+const { transporter: mailTransporter, logSafeSmtpError, EMAIL } = require("../utils/emailTransporter.js");
 
 
 const register = async (req, res) => {
@@ -327,8 +314,8 @@ const sendotp = async (req, res) => {
       await mailTransporter.sendMail(mailDetails);
       return res.status(200).json({ message: "OTP sent" });
     } catch (err) {
-      console.error("Mail error:", err);
-      return res.status(500).json({ message: "Failed to send OTP" });
+      logSafeSmtpError("sendotp", err);
+      return res.status(500).json({ message: "Failed to send OTP. System SMTP service might be temporarily unavailable or misconfigured." });
     }
   } catch (error) {
     console.error(error.message);
@@ -422,8 +409,8 @@ const sendVerificationOtp = async (req, res) => {
       await mailTransporter.sendMail(mailDetails);
       return res.status(200).json({ message: "Verification OTP sent" });
     } catch (err) {
-      console.error("Mail error:", err);
-      return res.status(500).json({ message: "Failed to send OTP" });
+      logSafeSmtpError("sendVerificationOtp", err);
+      return res.status(500).json({ message: "Failed to send OTP. System SMTP service might be temporarily unavailable or misconfigured." });
     }
   } catch (error) {
     console.error(error.message);

@@ -1,25 +1,11 @@
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const nodemailer = require("nodemailer");
 const MembershipApplication = require("../Models/MembershipApplication.js");
 const User = require("../Models/User.js");
 const Conversation = require("../Models/Conversation.js");
-const { JWT_SECRET, EMAIL, PASSWORD } = require("../secrets.js");
-
-// Recreate nodemailer transporter for OTP delivery
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 465,
-  secure: true,
-  auth: {
-    user: EMAIL,
-    pass: PASSWORD,
-  },
-  connectionTimeout: 120000,
-  greetingTimeout: 120000,
-  socketTimeout: 120000,
-});
+const { JWT_SECRET } = require("../secrets.js");
+const { transporter, logSafeSmtpError, EMAIL } = require("../utils/emailTransporter.js");
 
 /**
  * Generate a 6-digit numeric OTP.
@@ -147,10 +133,10 @@ const requestActivationOtp = async (req, res) => {
         console.log(`[DEV/TEST ONLY] ACTIVATION OTP FOR ${application.email}: ${rawOtp} (SMTP failed)`);
         console.log(`==================================================\n`);
       } else {
-        console.error("requestActivationOtp SMTP error:", mailErr.message);
+        logSafeSmtpError("requestActivationOtp", mailErr);
         return res.status(500).json({
           success: false,
-          error: "Failed to deliver activation OTP. Please try again later.",
+          error: "Failed to deliver activation OTP. System SMTP service might be temporarily unavailable or misconfigured.",
         });
       }
     }

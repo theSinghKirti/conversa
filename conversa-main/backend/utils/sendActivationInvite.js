@@ -1,19 +1,5 @@
-const nodemailer = require("nodemailer");
-const { EMAIL, PASSWORD, FRONTEND_URL } = require("../secrets.js");
-
-// Recreate the transporter using existing credentials and settings
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 465,
-  secure: true,
-  auth: {
-    user: EMAIL,
-    pass: PASSWORD,
-  },
-  connectionTimeout: 120000,
-  greetingTimeout: 120000,
-  socketTimeout: 120000,
-});
+const { transporter, logSafeSmtpError, EMAIL } = require("./emailTransporter.js");
+const { FRONTEND_URL } = require("../secrets.js");
 
 /**
  * Sends a community membership approval & account activation invitation email.
@@ -22,7 +8,7 @@ const transporter = nodemailer.createTransport({
  * @returns {Promise<{success: boolean, error?: string}>}
  */
 const sendActivationInvite = async (application) => {
-  if (!EMAIL || !PASSWORD) {
+  if (!EMAIL || !process.env.PASSWORD) {
     console.error("sendActivationInvite error: EMAIL or PASSWORD environment variables not configured.");
     return { success: false, error: "SMTP settings not configured on server" };
   }
@@ -131,8 +117,8 @@ const sendActivationInvite = async (application) => {
       console.log(`==================================================\n`);
       return { success: true };
     }
-    console.error("sendActivationInvite email error:", error.message);
-    return { success: false, error: "SMTP mail delivery failed" };
+    logSafeSmtpError("sendActivationInvite", error);
+    return { success: false, error: "Failed to deliver activation invitation email. System SMTP service might be temporarily unavailable or misconfigured." };
   }
 };
 

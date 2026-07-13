@@ -10,18 +10,8 @@
  *    with zero extra latency.
  */
 
-const nodemailer = require("nodemailer");
-const { EMAIL, PASSWORD, FRONTEND_URL } = require("../secrets.js");
-
-const transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 465,
-    secure: true,
-    auth: { user: EMAIL, pass: PASSWORD },
-    connectionTimeout: 120000,
-    greetingTimeout: 120000,
-    socketTimeout: 120000,
-});
+const { transporter, logSafeSmtpError, EMAIL } = require("./emailTransporter.js");
+const { FRONTEND_URL } = require("../secrets.js");
 
 /**
  * @param {{ name: string, email: string }} receiver
@@ -124,7 +114,7 @@ const sendMessageEmail = (receiver, sender, messageText, conversationId) => {
             html,
         })
         .catch((err) => {
-            console.error("[sendMessageEmail] Failed to send notification email:", err.message);
+            logSafeSmtpError("sendMessageEmail", err);
         });
 };
 
