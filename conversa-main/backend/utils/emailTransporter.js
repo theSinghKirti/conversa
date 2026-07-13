@@ -24,9 +24,9 @@ const transporter = nodemailer.createTransport({
     user: process.env.EMAIL || "",
     pass: normalisedPassword,
   },
-  connectionTimeout: 15000,
-  greetingTimeout: 10000,
-  socketTimeout: 20000,
+  connectionTimeout: 60000,
+  greetingTimeout: 30000,
+  socketTimeout: 60000,
 });
 
 // 4. Improved Safe SMTP Error Logger
@@ -45,12 +45,7 @@ const logSafeSmtpError = (contextName, error) => {
 const verifyTransporter = async () => {
   console.log("[SMTP Verification] Checking connection to Gmail SMTP...");
   try {
-    // We run verify with a Promise and a timeout of 10s to prevent hanging startup
-    const verifyPromise = transporter.verify();
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("SMTP verification connection timed out")), 10000)
-    );
-    await Promise.race([verifyPromise, timeoutPromise]);
+    await transporter.verify();
     console.log("[SMTP Verification] SMTP is ready to deliver emails.");
     return true;
   } catch (error) {
