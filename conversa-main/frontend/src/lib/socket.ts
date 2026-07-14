@@ -55,10 +55,15 @@ export const disconnectSocket = (): void => {
 export const emitSetup = (): void => { socket.emit("setup"); };
 
 export const emitJoinChat = (roomId: string): void => {
+    if (!roomId || roomId === "null") {
+        console.warn("[Socket] Ignored emitJoinChat for invalid or null roomId");
+        return;
+    }
     socket.emit("join-chat", { roomId });
 };
 
 export const emitLeaveChat = (roomId: string): void => {
+    if (!roomId || roomId === "null") return;
     socket.emit("leave-chat", roomId);
 };
 

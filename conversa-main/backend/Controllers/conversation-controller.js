@@ -109,17 +109,52 @@ const getConversationList = async (req, res) => {
   const userId = req.user.id;
 
   try {
-    const currentUser = await User.findById(userId).select("pinnedConversations");
+    const currentUser = await User.findById(userId).select("email pinnedConversations");
+    if (!currentUser) {
+      return res.status(404).json({ error: "User not found" });
+    }
     const pinnedSet = new Set((currentUser.pinnedConversations || []).map((id) => id.toString()));
 
-    const conversationList = await Conversation.find({
+    let conversationList = await Conversation.find({
       members: { $in: userId },
     })
       .populate("members", "-password")
       .sort({ updatedAt: -1 });
 
     if (!conversationList) {
-      return res.status(404).json({ error: "No conversation found" });
+      conversationList = [];
+    }
+
+    // Ensure bot user & conversation exists for the user
+    let botConv = conversationList.find((c) => c.members.some((m) => m.isBot));
+    if (!botConv) {
+      const botEmail = (currentUser.email || (userId + "@conversa.local")) + "bot";
+      let botUser = await User.findOne({ email: botEmail, isBot: true });
+      if (!botUser) {
+        botUser = await User.create({
+          name: "AI Chatbot",
+          email: botEmail,
+          password: "AI_CHATBOT_SECURE_DUMMY_PASSWORD",
+          authMethod: "OTP_ONLY",
+          about: "I am an AI Chatbot to help you",
+          profilePic:
+            "https://play-lh.googleusercontent.com/Oe0NgYQ63TGGEr7ViA2fGA-yAB7w2zhMofDBR3opTGVvsCFibD8pecWUjHBF_VnVKNdJ",
+          isBot: true,
+          isEmailVerified: true,
+        });
+      }
+
+      botConv = await Conversation.create({
+        members: [userId, botUser._id],
+        unreadCounts: [
+          { userId: userId, count: 0 },
+          { userId: botUser._id, count: 0 },
+        ],
+      });
+
+      // Refetch populated conversation
+      botConv = await Conversation.findById(botConv._id).populate("members", "-password");
+      conversationList.unshift(botConv);
     }
 
     // Build response: annotate isPinned

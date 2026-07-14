@@ -18,6 +18,9 @@ import { useAuth } from "@/hooks/use-auth"
 import { useConversations } from "@/hooks/use-conversations"
 import { cn } from "@/lib/utils"
 import { Separator } from "../ui/separator"
+import { conversationApi } from "@/lib/api"
+import { toast } from "sonner"
+import type { Conversation } from "@/hooks/use-conversations"
 
 const NAV_ITEMS = [
     {
@@ -61,6 +64,28 @@ export default function DashboardSidebar() {
     const handleLogout = () => {
         logout()
         navigate("/", { replace: true })
+    }
+
+    const handleAIChatbotClick = async (e: React.MouseEvent) => {
+        e.preventDefault()
+        if (aiChatbotConversationId && aiChatbotConversationId !== "null") {
+            navigate(`/user/conversations/${aiChatbotConversationId}`)
+            return
+        }
+
+        try {
+            toast.loading("Initializing AI Chatbot...", { id: "ai-init" })
+            const data = await conversationApi.list<Conversation[]>()
+            const chatbotConversation = data.find((c) => c.members.some((m) => m.isBot))
+            if (chatbotConversation?._id) {
+                toast.success("AI Chatbot ready!", { id: "ai-init" })
+                navigate(`/user/conversations/${chatbotConversation._id}`)
+            } else {
+                toast.error("Failed to initialize AI Chatbot conversation.", { id: "ai-init" })
+            }
+        } catch {
+            toast.error("Failed to initialize AI Chatbot conversation.", { id: "ai-init" })
+        }
     }
 
     const initials = user?.name
@@ -131,15 +156,15 @@ export default function DashboardSidebar() {
                             <Separator className="mt-1 mb-3" />
                             <SidebarMenuItem title="AI Chatbot" key={"ai-chatbot"} className="min-w-10 min-h-10">
                                 <SidebarMenuButton
-                                    asChild
-                                    className={`min-w-10 min-h-10 ${state=="collapsed"&&"rounded-full"} bg-primary hover:bg-primary p-4 border-2 border-primary text-background hover:text-background`}
+                                    onClick={handleAIChatbotClick}
+                                    className={`min-w-10 min-h-10 cursor-pointer ${state=="collapsed"&&"rounded-full"} bg-primary hover:bg-primary p-4 border-2 border-primary text-background hover:text-background`}
                                 >
-                                    <Link to={`/user/conversations/${aiChatbotConversationId}`} className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2">
                                         <div className="relative shrink-0">
                                             <Bot className="mx relative min-h-5 min-w-5" />
                                         </div>
                                         <span>AI Chatbot</span>
-                                    </Link>
+                                    </div>
                                 </SidebarMenuButton>
                             </SidebarMenuItem>
                         </SidebarMenu>

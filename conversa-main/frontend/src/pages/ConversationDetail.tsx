@@ -260,7 +260,12 @@ export default function ConversationDetail() {
 
     // ── load conversation + messages ────────────────────────────────────
     useEffect(() => {
-        if (!id || !user) return
+        if (!id || id === "null" || !user) {
+            if (id === "null") {
+                navigate("/user/conversations", { replace: true })
+            }
+            return
+        }
 
         setIsChatLoading(true)
         setMessageList([])
