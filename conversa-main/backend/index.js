@@ -6,6 +6,7 @@ const PORT = process.env.PORT || 5500;
 const { initSocket } = require("./socket/index.js");
 const { startStaleOnlineUsersJob } = require("./jobs/staleOnlineUsers.js");
 const { ALLOWED_ORIGINS, validateEnv } = require("./secrets.js");
+const { verifyTransporter } = require("./utils/emailService.js");
 
 const app = express();
 
@@ -61,6 +62,7 @@ initSocket(server); // Initialize socket.io logic
 const start = async () => {
   validateEnv();
   await connectDB(); // connect first
+  await verifyTransporter();
   server.listen(PORT, "0.0.0.0", () => {
     console.log(`Server listening on port ${PORT}`);
   });

@@ -3,7 +3,7 @@ const dotenv = require("dotenv");
 // Load environment variables relative to current directory
 dotenv.config({ path: path.join(__dirname, "../.env") });
 
-const { sendEmail, isResendConfigured, isNodemailerConfigured } = require("../utils/emailService.js");
+const { sendEmail, verifyTransporter, isBrevoConfigured } = require("../utils/emailService.js");
 
 const recipient = process.argv[2];
 if (!recipient) {
@@ -13,27 +13,38 @@ if (!recipient) {
 }
 
 const run = async () => {
-  console.log("=== EMAIL DIAGNOSTIC START ===");
-  console.log(`[Config Check] Resend Configured: ${isResendConfigured}`);
-  console.log(`[Config Check] Nodemailer Fallback Configured: ${isNodemailerConfigured}`);
+  console.log("=== BREVO SMTP DIAGNOSTIC START ===");
+  console.log(`[Config Check] Brevo SMTP Configured: ${isBrevoConfigured}`);
+  console.log(`[Config Check] SMTP_HOST: ${process.env.SMTP_HOST || "smtp-relay.brevo.com"}`);
+  console.log(`[Config Check] SMTP_PORT: ${process.env.SMTP_PORT || "587"}`);
+  console.log(`[Config Check] SMTP_LOGIN: ${process.env.SMTP_LOGIN || "Not configured"}`);
+  console.log(`[Config Check] EMAIL_FROM: ${process.env.EMAIL_FROM || "Not configured"}`);
 
-  if (!isResendConfigured && !isNodemailerConfigured) {
-    console.warn("WARNING: Neither Resend nor Nodemailer are configured. Falling back to console-only mock.");
+  if (!isBrevoConfigured) {
+    console.error("ERROR: Brevo SMTP is not configured. Cannot dispatch email.");
+    process.exit(1);
   }
 
-  // Define diagnostic payload
+  // 1. Verify connection
+  const verified = await verifyTransporter();
+  if (!verified) {
+    console.error("ERROR: SMTP connection verification failed. Cannot proceed with sending email.");
+    process.exit(1);
+  }
+
+  // 2. Dispatch email
   const mailOptions = {
     to: recipient,
-    subject: "Conversa Email Service Diagnostic Test",
+    subject: "Conversa Brevo SMTP Diagnostic Test",
     html: `<!DOCTYPE html>
 <html>
 <head>
-  <title>Diagnostic Test</title>
+  <title>Brevo SMTP Test</title>
 </head>
 <body style="font-family: sans-serif; padding: 20px;">
-  <h2 style="color: #6366f1;">Conversa Delivery Verification</h2>
-  <p>This is a diagnostic email dispatched to verify your new email integration.</p>
-  <p><strong>Method:</strong> ${isResendConfigured ? "Resend HTTPS API" : isNodemailerConfigured ? "Nodemailer SMTP Fallback" : "Console Sandbox Mock"}</p>
+  <h2 style="color: #6366f1;">Conversa Brevo SMTP Delivery Verification</h2>
+  <p>This is a diagnostic email dispatched to verify your new Brevo SMTP integration.</p>
+  <p><strong>Method:</strong> Brevo SMTP Port 587 (STARTTLS)</p>
   <p>Dispatched At: ${new Date().toISOString()}</p>
 </body>
 </html>`
@@ -43,12 +54,12 @@ const run = async () => {
   const result = await sendEmail(mailOptions);
 
   if (result.success) {
-    console.log("=== EMAIL DIAGNOSTIC SUCCESS ===");
+    console.log("=== BREVO SMTP DIAGNOSTIC SUCCESS ===");
     console.log("Details:", {
       messageId: result.messageId
     });
   } else {
-    console.error("=== EMAIL DIAGNOSTIC FAILED ===");
+    console.error("=== BREVO SMTP DIAGNOSTIC FAILED ===");
     console.error("Details:", {
       error: result.error
     });
