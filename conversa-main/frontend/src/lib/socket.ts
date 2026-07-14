@@ -71,8 +71,11 @@ export const emitJoinCommunityInbox = (): void => {
     socket.emit("join-community-inbox");
 };
 
-export const emitSendMessage = ({ conversationId, text, imageUrl, replyTo }: SendMessagePayload): void => {
-    socket.emit("send-message", { conversationId, text, imageUrl, replyTo });
+export const emitSendMessage = (
+    { conversationId, text, imageUrl, replyTo }: SendMessagePayload,
+    callback?: (response: { success: boolean; error?: string }) => void
+): void => {
+    socket.emit("send-message", { conversationId, text, imageUrl, replyTo }, callback);
 };
 
 export const emitDeleteMessage = ({ messageId, conversationId, scope }: DeleteMessagePayload): void => {

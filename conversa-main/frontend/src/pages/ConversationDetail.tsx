@@ -377,7 +377,10 @@ export default function ConversationDetail() {
     useEffect(() => {
         const onMessage = (msg: Message) => {
             if (msg.conversationId !== id) return
-            setMessageList((prev) => [...prev, msg])
+            setMessageList((prev) => {
+                if (prev.some((m) => m._id === msg._id)) return prev
+                return [...prev, msg]
+            })
             // update sidebar latest message and bump to top
             setConversationsList((prev) => {
                 const idx = prev.findIndex((c) => c._id === id)
@@ -416,7 +419,10 @@ export default function ConversationDetail() {
         const onBotDone = ({ conversationId: cid, message }: { conversationId: string; tempId: string; message: Message }) => {
             if (cid !== id) return
             setStreamingBot(null)
-            setMessageList((prev) => [...prev, message])
+            setMessageList((prev) => {
+                if (prev.some((m) => m._id === message._id)) return prev
+                return [...prev, message]
+            })
         }
 
         const onBotError = ({ conversationId: cid, userMessageId }: { conversationId: string; userMessageId: string | null }) => {

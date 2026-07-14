@@ -139,18 +139,25 @@ module.exports = (io, socket, userSocketMap) => {
   });
 
   // ─── Send message ──────────────────────────────────────────────────────────
-  const handleSendMessage = async (data) => {
+  const handleSendMessage = async (data, callback) => {
     try {
-      console.log("Received message");
-
       const { conversationId, text, imageUrl, replyTo } = data;
+      console.log("Received message:", {
+        conversationId,
+        text: text ? text.substring(0, 20) : null,
+        hasImage: !!imageUrl
+      });
+
       // Always use the authenticated user as the sender — never trust client-supplied senderId
       const senderId = currentUserId;
 
       const conversation = await Conversation.findById(conversationId).populate(
         "members"
       );
-      if (!conversation) return;
+      if (!conversation) {
+        if (callback) callback({ success: false, error: "Conversation not found" });
+        return;
+      }
 
       // Verify sender is a member of this conversation
       const isMember = conversation.members.some(
@@ -160,6 +167,7 @@ module.exports = (io, socket, userSocketMap) => {
         console.warn(
           `User ${senderId} tried to send to conversation ${conversationId} they don't belong to`
         );
+        if (callback) callback({ success: false, error: "Not a member of this conversation" });
         return;
       }
 
@@ -180,6 +188,18 @@ module.exports = (io, socket, userSocketMap) => {
               io.to(conversationId).emit("receive-message", event.message);
               // Now start the typing indicator (conversationId required by frontend)
               io.to(conversationId).emit("typing", { typer: botId, conversationId });
+
+              console.log("Message saved:", {
+                messageId: event.message._id.toString(),
+                conversationId: event.message.conversationId.toString(),
+                senderId: event.message.senderId.toString(),
+                emittedEvent: "receive-message",
+                roomId: conversationId
+              });
+
+              if (callback) {
+                callback({ success: true, messageId: event.message._id.toString() });
+              }
             } else if (event.type === "chunk") {
               io.to(conversationId).emit("bot-chunk", { conversationId, tempId, chunk: event.text });
             } else if (event.type === "done") {
@@ -191,12 +211,18 @@ module.exports = (io, socket, userSocketMap) => {
                 conversationId,
                 userMessageId: event.userMessageId ?? null,
               });
+              if (callback) {
+                callback({ success: false, error: "Failed to generate AI response" });
+              }
             }
           }
         } catch (err) {
           console.error("Bot streaming error:", err);
           io.to(conversationId).emit("stop-typing", { typer: botId, conversationId });
           io.to(conversationId).emit("bot-error", { conversationId, userMessageId: null });
+          if (callback) {
+            callback({ success: false, error: err.message });
+          }
         }
         return;
       }
@@ -205,7 +231,10 @@ module.exports = (io, socket, userSocketMap) => {
       const receiverMember = conversation.members.find(
         (member) => member._id.toString() !== senderId
       );
-      if (!receiverMember) return;
+      if (!receiverMember) {
+        if (callback) callback({ success: false, error: "Receiver not found" });
+        return;
+      }
 
       const receiverId = receiverMember._id;
 
@@ -224,6 +253,7 @@ module.exports = (io, socket, userSocketMap) => {
       );
       if (isBlockedByReceiver || senderBlockedReceiver) {
         socket.emit("message-blocked", { conversationId });
+        if (callback) callback({ success: false, error: "Message blocked by privacy settings" });
         return;
       }
 
@@ -251,7 +281,19 @@ module.exports = (io, socket, userSocketMap) => {
         replyTo: replyTo || null,
       });
 
+      console.log("Message saved:", {
+        messageId: message._id.toString(),
+        conversationId: message.conversationId.toString(),
+        senderId: message.senderId.toString(),
+        emittedEvent: "receive-message",
+        roomId: conversationId
+      });
+
       io.to(conversationId).emit("receive-message", message);
+
+      if (callback) {
+        callback({ success: true, messageId: message._id.toString() });
+      }
 
       conversation.unreadCounts = conversation.unreadCounts.map((unread) => {
         if (unread.userId.toString() === receiverId.toString()) {
@@ -288,6 +330,9 @@ module.exports = (io, socket, userSocketMap) => {
       }
     } catch (error) {
       console.error("Error in send-message handler:", error);
+      if (callback) {
+        callback({ success: false, error: error.message });
+      }
     }
   };
 

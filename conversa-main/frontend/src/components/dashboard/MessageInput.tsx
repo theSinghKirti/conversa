@@ -92,9 +92,17 @@ export default function MessageInput({ conversationId, myId, receiverId, receive
         if (!trimmed) return
         clearTimeout(stopTypingTimer.current!)
         emitStopTypingNow()
-        emitSendMessage({ conversationId, text: trimmed, replyTo: replyToMessage?._id ?? null })
-        setText("")
-        onCancelReply?.()
+        emitSendMessage(
+            { conversationId, text: trimmed, replyTo: replyToMessage?._id ?? null },
+            (response) => {
+                if (response && response.success) {
+                    setText("")
+                    onCancelReply?.()
+                } else {
+                    toast.error(response?.error || "Failed to send message.")
+                }
+            }
+        )
         textareaRef.current?.focus()
     }
 
@@ -134,9 +142,17 @@ export default function MessageInput({ conversationId, myId, receiverId, receive
             // AWS SDK v3 returns the object key as fields.key (lowercase)
             const imageUrl = `${url}${fields.key}`
             const trimmedCaption = caption.trim()
-            emitSendMessage({ conversationId, imageUrl, ...(trimmedCaption && { text: trimmedCaption }), replyTo: replyToMessage?._id ?? null })
-            onCancelReply?.()
-            closeImageDialog()
+            emitSendMessage(
+                { conversationId, imageUrl, ...(trimmedCaption && { text: trimmedCaption }), replyTo: replyToMessage?._id ?? null },
+                (response) => {
+                    if (response && response.success) {
+                        onCancelReply?.()
+                        closeImageDialog()
+                    } else {
+                        toast.error(response?.error || "Failed to send image.")
+                    }
+                }
+            )
         } catch (err) {
             let errorMsg = err instanceof Error ? err.message : "Failed to send image."
             if (errorMsg === "Failed to fetch") {
