@@ -32,29 +32,56 @@ function sanitizeForRequester(member, requesterId) {
 
 const createConversation = async (req, res) => {
   try {
-    const { members: memberIds } = req.body;
+    const { receiverId } = req.body;
 
-    if (!memberIds) {
+    if (!receiverId) {
       return res.status(400).json({
-        error: "Please fill all the fields",
+        error: "Receiver ID is required",
       });
     }
 
+    const senderId = req.user.id;
+
+    if (receiverId.toString() === senderId.toString()) {
+      return res.status(400).json({
+        error: "You cannot start a conversation with yourself.",
+      });
+    }
+
+    // Validate that the receiver exists and is ACTIVE (or is a Bot)
+    const receiver = await User.findById(receiverId);
+    if (!receiver || (!receiver.isBot && receiver.accountStatus !== "ACTIVE")) {
+      return res.status(404).json({
+        error: "Receiver user not found or is inactive",
+      });
+    }
+
+    // Deduplicate IDs before any query or insert
+    const uniqueMembers = [...new Set([senderId.toString(), receiverId.toString()])];
+
+    // Require exactly two distinct member IDs
+    if (uniqueMembers.length !== 2) {
+      return res.status(400).json({
+        error: "A conversation must have exactly two distinct member IDs.",
+      });
+    }
+
+    // Find an existing personal conversation using those exact two unique IDs
     const conv = await Conversation.findOne({
-      members: { $all: memberIds, $size: memberIds.length },
+      members: { $all: uniqueMembers, $size: 2 },
     }).populate("members", "-password");
 
     if (conv) {
       const sanitizedConv = conv.toObject();
       sanitizedConv.members = conv.members
-        .filter((member) => member && member._id.toString() !== req.user.id)
-        .map((member) => sanitizeForRequester(member, req.user.id));
+        .filter((member) => member && member._id.toString() !== senderId)
+        .map((member) => sanitizeForRequester(member, senderId));
       return res.status(200).json(sanitizedConv);
     }
 
     const newConversation = await Conversation.create({
-      members: memberIds,
-      unreadCounts: memberIds.map((memberId) => ({
+      members: uniqueMembers,
+      unreadCounts: uniqueMembers.map((memberId) => ({
         userId: memberId,
         count: 0,
       })),
@@ -64,8 +91,8 @@ const createConversation = async (req, res) => {
 
     const sanitizedNew = newConversation.toObject();
     sanitizedNew.members = newConversation.members
-      .filter((member) => member && member._id.toString() !== req.user.id)
-      .map((member) => sanitizeForRequester(member, req.user.id));
+      .filter((member) => member && member._id.toString() !== senderId)
+      .map((member) => sanitizeForRequester(member, senderId));
 
     return res.status(200).json(sanitizedNew);
   } catch (error) {

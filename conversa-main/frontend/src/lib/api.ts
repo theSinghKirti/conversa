@@ -301,11 +301,11 @@ export const conversationApi = {
             headers: headers(),
         }).then((res) => handleResponse<T>(res)),
 
-    create: (memberIds: string[]) =>
+    create: (receiverId: string) =>
         fetch(`${API_BASE}/conversation/`, {
             method: "POST",
             headers: headers(),
-            body: JSON.stringify({ members: memberIds }),
+            body: JSON.stringify({ receiverId }),
         }).then(handleResponse),
 
     togglePin: (id: string) =>

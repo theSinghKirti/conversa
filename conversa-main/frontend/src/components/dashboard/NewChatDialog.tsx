@@ -233,7 +233,7 @@ export default function NewChatDialog({ open, onOpenChange }: NewChatDialogProps
         if (!user) return
         setCreating(userId)
         try {
-            const conv = await conversationApi.create([user._id, userId]) as { _id: string }
+            const conv = await conversationApi.create(userId) as { _id: string }
             await fetchConversations()
             onOpenChange(false)
             navigate(`/user/conversations/${conv._id}`)
