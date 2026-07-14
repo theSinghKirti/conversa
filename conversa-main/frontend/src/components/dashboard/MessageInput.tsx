@@ -138,7 +138,11 @@ export default function MessageInput({ conversationId, myId, receiverId, receive
             onCancelReply?.()
             closeImageDialog()
         } catch (err) {
-            toast.error(err instanceof Error ? err.message : "Failed to send image.")
+            let errorMsg = err instanceof Error ? err.message : "Failed to send image."
+            if (errorMsg === "Failed to fetch") {
+                errorMsg = "Image upload blocked by CORS policy. Please verify AWS S3 bucket CORS permissions."
+            }
+            toast.error(errorMsg)
         } finally {
             setUploading(false)
         }

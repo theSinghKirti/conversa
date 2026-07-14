@@ -288,7 +288,11 @@ const UserProfile = () => {
             setUser({ ...user, profilePic: imageUrl })
             toast.success("Profile photo updated")
         } catch (e) {
-            toast.error(e instanceof Error ? e.message : "Upload failed")
+            let errorMsg = e instanceof Error ? e.message : "Upload failed"
+            if (errorMsg === "Failed to fetch") {
+                errorMsg = "Upload blocked by browser. Please verify AWS S3 bucket CORS permissions are configured correctly."
+            }
+            toast.error(errorMsg)
         } finally {
             setAvatarUploading(false)
         }
