@@ -80,7 +80,7 @@ interface RowProps {
 function ConversationRow({ conv, myId, isActive, isTyping, onClick, openDropdownId, setOpenDropdownId, onToggleBlock, onClearChat, onTogglePin, blockedUsers }: RowProps) {
     const other = getOtherMember(conv, myId)
     const unread = conv.unreadCounts.find((u) => u.userId === myId)?.count ?? 0
-    const name = other?.name ?? "Unknown"
+    const name = other?.name ?? "Deleted or unavailable user"
     const preview = isTyping
         ? "typing…"
         : conv.latestmessage || "Start a conversation"

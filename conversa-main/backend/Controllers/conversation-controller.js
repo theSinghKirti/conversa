@@ -47,7 +47,7 @@ const createConversation = async (req, res) => {
     if (conv) {
       const sanitizedConv = conv.toObject();
       sanitizedConv.members = conv.members
-        .filter((member) => member._id.toString() !== req.user.id)
+        .filter((member) => member && member._id.toString() !== req.user.id)
         .map((member) => sanitizeForRequester(member, req.user.id));
       return res.status(200).json(sanitizedConv);
     }
@@ -64,7 +64,7 @@ const createConversation = async (req, res) => {
 
     const sanitizedNew = newConversation.toObject();
     sanitizedNew.members = newConversation.members
-      .filter((member) => member._id.toString() !== req.user.id)
+      .filter((member) => member && member._id.toString() !== req.user.id)
       .map((member) => sanitizeForRequester(member, req.user.id));
 
     return res.status(200).json(sanitizedNew);
@@ -87,18 +87,19 @@ const getConversation = async (req, res) => {
       });
     }
 
-    // Ensure the requesting user is a member
     const isMember = conversation.members.some(
-      (m) => m._id.toString() === req.user.id
+      (m) => m && m._id.toString() === req.user.id
     );
     if (!isMember) {
       return res.status(403).json({ error: "Forbidden" });
     }
 
     const sanitized = conversation.toObject();
-    sanitized.members = conversation.members.map((m) =>
-      sanitizeForRequester(m, req.user.id)
-    );
+    sanitized.members = conversation.members
+      .filter((m) => m !== null)
+      .map((m) =>
+        sanitizeForRequester(m, req.user.id)
+      );
     res.status(200).json(sanitized);
   } catch (error) {
     res.status(500).send("Internal Server Error");
@@ -164,7 +165,7 @@ const getConversationList = async (req, res) => {
 
       const conv = conversationList[i].toObject();
       conv.members = conversationList[i].members
-        .filter((member) => member.id !== userId)
+        .filter((member) => member && member.id !== userId)
         .map((member) => sanitizeForRequester(member, userId));
       conv.isPinned = pinnedSet.has(convId);
       result.push(conv);

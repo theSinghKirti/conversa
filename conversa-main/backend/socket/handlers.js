@@ -159,8 +159,15 @@ module.exports = (io, socket, userSocketMap) => {
         return;
       }
 
+      // Check if conversation record is corrupted (e.g. less than 2 valid members populated)
+      const validMembers = (conversation.members || []).filter((m) => m !== null);
+      if (validMembers.length < 2) {
+        if (callback) callback({ success: false, error: "Receiver not found" });
+        return;
+      }
+
       // Verify sender is a member of this conversation
-      const isMember = conversation.members.some(
+      const isMember = validMembers.some(
         (m) => m._id.toString() === senderId
       );
       if (!isMember) {
@@ -173,7 +180,7 @@ module.exports = (io, socket, userSocketMap) => {
 
       // ── AI bot processing ────────────────────────────────────────────────
       // Use the isBot field instead of an email-suffix heuristic.
-      const botMember = conversation.members.find(
+      const botMember = validMembers.find(
         (member) => member._id.toString() !== senderId && member.isBot
       );
 
@@ -228,7 +235,7 @@ module.exports = (io, socket, userSocketMap) => {
       }
 
       // ── Personal chat processing ─────────────────────────────────────────
-      const receiverMember = conversation.members.find(
+      const receiverMember = validMembers.find(
         (member) => member._id.toString() !== senderId
       );
       if (!receiverMember) {
@@ -237,6 +244,13 @@ module.exports = (io, socket, userSocketMap) => {
       }
 
       const receiverId = receiverMember._id;
+
+      // Verify that user still exists in database
+      const receiverExists = await User.exists({ _id: receiverId });
+      if (!receiverExists) {
+        if (callback) callback({ success: false, error: "Receiver not found" });
+        return;
+      }
 
       // ── Block check ───────────────────────────────────────────────────────
       // Prevent sending if (a) the receiver has blocked the sender, or

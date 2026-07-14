@@ -32,6 +32,7 @@ const STOP_TYPING_DELAY = 1500
 
 export default function MessageInput({ conversationId, myId, receiverId, receiverName, isReceiverBot, isBlocked, blockedByThem, replyToMessage, onCancelReply }: Props) {
     const [text, setText] = useState("")
+    const [sending, setSending] = useState(false)
     const [uploading, setUploading] = useState(false)
     const [imageDialogOpen, setImageDialogOpen] = useState(false)
     const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -83,18 +84,20 @@ export default function MessageInput({ conversationId, myId, receiverId, receive
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault()
-            handleSendText()
+            if (!sending) handleSendText()
         }
     }
 
     const handleSendText = () => {
         const trimmed = text.trim()
-        if (!trimmed) return
+        if (!trimmed || sending) return
+        setSending(true)
         clearTimeout(stopTypingTimer.current!)
         emitStopTypingNow()
         emitSendMessage(
             { conversationId, text: trimmed, replyTo: replyToMessage?._id ?? null },
             (response) => {
+                setSending(false)
                 if (response && response.success) {
                     setText("")
                     onCancelReply?.()
@@ -247,7 +250,7 @@ export default function MessageInput({ conversationId, myId, receiverId, receive
                     size="lg"
                     className="shrink-0 hover:bg-primary/90 text-white rounded-xl"
                     onClick={handleSendText}
-                    disabled={!text.trim()}
+                    disabled={!text.trim() || sending}
                     title="Send"
                 >
                     <ArrowRight className="size-5" />

@@ -62,7 +62,7 @@ export default function ConversationDetailHeader({ receiver, onClearChat, onSele
     const [profileOpen, setProfileOpen] = useState(false)
     const [clearOpen, setClearOpen] = useState(false)
 
-    const name = receiver?.name ?? "..."
+    const name = receiver?.name ?? "Deleted or unavailable user"
     const statusText = lastSeenText(receiver)
 
     return (
