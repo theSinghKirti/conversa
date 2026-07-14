@@ -93,12 +93,10 @@ const requestActivationOtp = async (req, res) => {
     application.activationOtpAttempts = 0;
     await application.save();
 
-    // Send email with OTP
-    const mailOptions = {
-      from: `"Conversa Community" <${EMAIL}>`,
-      to: application.email,
-      subject: `Your Membership Activation Code – ${rawOtp}`,
-      html: `<!DOCTYPE html>
+    // Send email with OTP.
+    // NOTE: sendEmail() manages the sender address (EMAIL_FROM) internally via
+    // emailService.js — no EMAIL variable is needed here.
+    const activationHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -114,14 +112,13 @@ const requestActivationOtp = async (req, res) => {
     <p style="color:#6b7280; font-size:12px; text-align:center;">Do not share this code with anyone.</p>
   </div>
 </body>
-</html>`,
-    };
+</html>`;
 
     try {
       const result = await sendEmail({
-        to: application.email,
+        to: normalisedEmail,
         subject: `Your Membership Activation Code – ${rawOtp}`,
-        html: mailOptions.html
+        html: activationHtml,
       });
       if (!result.success) {
         return res.status(500).json({
@@ -130,6 +127,7 @@ const requestActivationOtp = async (req, res) => {
         });
       }
     } catch (mailErr) {
+      console.error("requestActivationOtp sendEmail error:", mailErr.message);
       return res.status(500).json({
         success: false,
         error: "Failed to deliver activation OTP due to internal server error.",

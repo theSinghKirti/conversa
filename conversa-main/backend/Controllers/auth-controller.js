@@ -226,7 +226,6 @@ const sendotp = async (req, res) => {
     await user.save();
 
     let mailDetails = {
-      from: `"Conversa" <${EMAIL}>`,
       to: email,
       subject: "Your Conversa Login OTP - " + otp,
       html: `<!DOCTYPE html>
@@ -345,7 +344,6 @@ const sendVerificationOtp = async (req, res) => {
     await user.save();
 
     const mailDetails = {
-      from: `"Conversa" <${EMAIL}>`,
       to: user.email,
       subject: `Verify your Conversa email – OTP: ${otp}`,
       html: `<!DOCTYPE html>
