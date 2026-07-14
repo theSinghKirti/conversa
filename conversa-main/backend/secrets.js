@@ -18,10 +18,8 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3-flash-preview";
 const EMAIL = process.env.EMAIL;
 const PASSWORD = process.env.PASSWORD;
-const SMTP_HOST = process.env.SMTP_HOST || "smtp-relay.brevo.com";
-const SMTP_PORT = process.env.SMTP_PORT || "587";
-const SMTP_LOGIN = process.env.SMTP_LOGIN;
-const SMTP_KEY = process.env.SMTP_KEY;
+const BREVO_API_KEY = process.env.BREVO_API_KEY;
+const EMAIL_FROM_NAME = process.env.EMAIL_FROM_NAME || "Conversa";
 const EMAIL_FROM = process.env.EMAIL_FROM;
 const AWS_BUCKET_NAME = process.env.AWS_BUCKET_NAME;
 const AWS_ACCESS_KEY = process.env.AWS_ACCESS_KEY;
@@ -55,10 +53,8 @@ const validateEnv = () => {
     "MONGO_DB_NAME",
     "EMAIL",
     "PASSWORD",
-    "SMTP_HOST",
-    "SMTP_PORT",
-    "SMTP_LOGIN",
-    "SMTP_KEY",
+    "BREVO_API_KEY",
+    "EMAIL_FROM_NAME",
     "EMAIL_FROM",
     "AWS_BUCKET_NAME",
     "AWS_ACCESS_KEY",
@@ -86,10 +82,8 @@ module.exports = {
   GEMINI_MODEL,
   EMAIL,
   PASSWORD,
-  SMTP_HOST,
-  SMTP_PORT,
-  SMTP_LOGIN,
-  SMTP_KEY,
+  BREVO_API_KEY,
+  EMAIL_FROM_NAME,
   EMAIL_FROM,
   AWS_BUCKET_NAME,
   FRONTEND_URL,
