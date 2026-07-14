@@ -151,17 +151,22 @@ module.exports = (io, socket, userSocketMap) => {
       // Always use the authenticated user as the sender — never trust client-supplied senderId
       const senderId = currentUserId;
 
+      console.log("Step 1: Loading conversation:", conversationId);
       const conversation = await Conversation.findById(conversationId).populate(
         "members"
       );
       if (!conversation) {
+        console.log("Step 1 Failed: Conversation not found for ID:", conversationId);
         if (callback) callback({ success: false, error: "Conversation not found" });
         return;
       }
+      console.log("Step 1 Success: Conversation loaded. Member records in DB:", conversation.members);
 
       // Check if conversation record is corrupted (e.g. less than 2 valid members populated)
       const validMembers = (conversation.members || []).filter((m) => m !== null);
+      console.log("Step 1.5: Valid members count:", validMembers.length);
       if (validMembers.length < 2) {
+        console.log("Step 1.5 Failed: Corrupted conversation members. Valid count is less than 2.");
         if (callback) callback({ success: false, error: "Receiver not found" });
         return;
       }
@@ -172,11 +177,12 @@ module.exports = (io, socket, userSocketMap) => {
       );
       if (!isMember) {
         console.warn(
-          `User ${senderId} tried to send to conversation ${conversationId} they don't belong to`
+          `Step 2 Failed: User ${senderId} tried to send to conversation ${conversationId} they don't belong to`
         );
         if (callback) callback({ success: false, error: "Not a member of this conversation" });
         return;
       }
+      console.log("Step 2 Success: Sender membership verified:", senderId);
 
       // ── AI bot processing ────────────────────────────────────────────────
       // Use the isBot field instead of an email-suffix heuristic.
@@ -186,6 +192,7 @@ module.exports = (io, socket, userSocketMap) => {
 
       if (botMember) {
         const botId = botMember._id.toString();
+        console.log("Step 3 (AI Bot): Identified AI bot participant:", botId);
         const tempId = `bot-stream-${Date.now()}`;
 
         try {
@@ -196,7 +203,7 @@ module.exports = (io, socket, userSocketMap) => {
               // Now start the typing indicator (conversationId required by frontend)
               io.to(conversationId).emit("typing", { typer: botId, conversationId });
 
-              console.log("Message saved:", {
+              console.log("Message saved (AI Bot path):", {
                 messageId: event.message._id.toString(),
                 conversationId: event.message.conversationId.toString(),
                 senderId: event.message.senderId.toString(),
@@ -239,22 +246,27 @@ module.exports = (io, socket, userSocketMap) => {
         (member) => member._id.toString() !== senderId
       );
       if (!receiverMember) {
+        console.log("Step 3 Failed: Receiver member not found in validMembers");
         if (callback) callback({ success: false, error: "Receiver not found" });
         return;
       }
 
       const receiverId = receiverMember._id;
+      console.log("Step 3 Success: Receiver resolved in valid members list:", receiverId.toString());
 
       // Verify that user still exists in database
       const receiverExists = await User.exists({ _id: receiverId });
       if (!receiverExists) {
+        console.log("Step 3.5 Failed: Receiver user record does not exist in DB:", receiverId.toString());
         if (callback) callback({ success: false, error: "Receiver not found" });
         return;
       }
+      console.log("Step 3.5 Success: Receiver verified to exist in DB.");
 
       // ── Block check ───────────────────────────────────────────────────────
       // Prevent sending if (a) the receiver has blocked the sender, or
       // (b) the sender has blocked the receiver.
+      console.log("Step 3.7: Querying block statuses...");
       const [receiverDoc, senderDoc] = await Promise.all([
         User.findById(receiverId, "blockedUsers emailNotificationsEnabled email name"),
         User.findById(senderId, "blockedUsers"),
@@ -266,10 +278,12 @@ module.exports = (io, socket, userSocketMap) => {
         (id) => id.toString() === receiverId.toString()
       );
       if (isBlockedByReceiver || senderBlockedReceiver) {
+        console.log("Step 3.7 Failed: Blocked user relationship found. isBlockedByReceiver:", !!isBlockedByReceiver, "senderBlockedReceiver:", !!senderBlockedReceiver);
         socket.emit("message-blocked", { conversationId });
         if (callback) callback({ success: false, error: "Message blocked by privacy settings" });
         return;
       }
+      console.log("Step 3.7 Success: Privacy blocks check passed.");
 
       // Determine if the receiver currently has the conversation room open.
       // Check ALL of the receiver's sockets so multi-device is handled correctly.
@@ -284,7 +298,9 @@ module.exports = (io, socket, userSocketMap) => {
           );
         }
       }
+      console.log("Step 3.9: isReceiverInsideChatRoom calculated:", isReceiverInsideChatRoom);
 
+      console.log("Step 4: Attempting to save message to DB via sendMessageHandler...");
       const message = await sendMessageHandler({
         text,
         imageUrl,
@@ -295,7 +311,7 @@ module.exports = (io, socket, userSocketMap) => {
         replyTo: replyTo || null,
       });
 
-      console.log("Message saved:", {
+      console.log("Step 4 Success: Message saved to DB:", {
         messageId: message._id.toString(),
         conversationId: message.conversationId.toString(),
         senderId: message.senderId.toString(),
@@ -303,11 +319,15 @@ module.exports = (io, socket, userSocketMap) => {
         roomId: conversationId
       });
 
+      console.log("Step 5: Emitting receive-message to room:", conversationId);
       io.to(conversationId).emit("receive-message", message);
+      console.log("Step 5 Success: Event emitted to room.");
 
+      console.log("Step 6: Executing callback acknowledgment...");
       if (callback) {
         callback({ success: true, messageId: message._id.toString() });
       }
+      console.log("Step 6 Success: Callback executed.");
 
       conversation.unreadCounts = conversation.unreadCounts.map((unread) => {
         if (unread.userId.toString() === receiverId.toString()) {
