@@ -144,7 +144,7 @@ async function runPrecedentSearch(intake, legalSources = [], jurisdiction = "Ind
       jurisdiction,
       legalDomain: intake.legalDomain,
       limit: 3,
-      minScore: 0.25,
+      minScore: 0.12,
     });
 
     // Pass 2: Fall back to jurisdiction only if domain match returned 0 results
@@ -153,7 +153,7 @@ async function runPrecedentSearch(intake, legalSources = [], jurisdiction = "Ind
       matches = await searchPrecedents(queryVec, {
         jurisdiction,
         limit: 3,
-        minScore: 0.20,
+        minScore: 0.08,
       });
     }
 
@@ -162,7 +162,7 @@ async function runPrecedentSearch(intake, legalSources = [], jurisdiction = "Ind
       console.log("[PrecedentAgent] Pass 2 returned 0 — doing global fallback search…");
       matches = await searchPrecedents(queryVec, {
         limit: 3,
-        minScore: 0.15,
+        minScore: 0.05,
       });
     }
   } catch (searchErr) {

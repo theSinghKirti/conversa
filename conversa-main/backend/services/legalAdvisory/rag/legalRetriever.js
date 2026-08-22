@@ -133,7 +133,7 @@ async function retrieve(intake, opts = {}) {
       jurisdiction,
       legalDomain,
       limit,
-      minScore,
+      minScore: 0.12,
     });
 
     // Pass 2: Filter by jurisdiction only if pass 1 gave fewer than 2 results
@@ -141,7 +141,7 @@ async function retrieve(intake, opts = {}) {
       const pass2 = await similaritySearch(queryVec, {
         jurisdiction,
         limit,
-        minScore: Math.max(0.20, minScore - 0.08),
+        minScore: 0.08,
       });
       // Deduplicate
       const existingIds = new Set(results.map((r) => r.chunkId));
@@ -157,7 +157,7 @@ async function retrieve(intake, opts = {}) {
     if (results.length === 0) {
       results = await similaritySearch(queryVec, {
         limit,
-        minScore: 0.15,
+        minScore: 0.05,
       });
     }
   } catch (searchErr) {

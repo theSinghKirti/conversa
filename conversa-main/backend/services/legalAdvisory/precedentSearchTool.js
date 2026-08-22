@@ -105,7 +105,7 @@ async function searchPrecedents(queryVec, opts = {}) {
     jurisdiction,
     legalDomain,
     limit    = 3,
-    minScore = 0.52,
+    minScore = 0.08,
   } = opts;
 
   const matchStage = {};

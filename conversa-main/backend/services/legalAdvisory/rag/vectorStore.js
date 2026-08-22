@@ -138,7 +138,7 @@ async function similaritySearch(queryVec, opts = {}) {
     jurisdiction,
     legalDomain,
     limit     = 5,
-    minScore  = 0.55,
+    minScore  = 0.08,
   } = opts;
 
   // Pre-filter stage (reduces the number of dot products computed)
