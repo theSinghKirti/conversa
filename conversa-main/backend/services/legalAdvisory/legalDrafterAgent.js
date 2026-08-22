@@ -17,9 +17,10 @@ const getGeminiClient = () => {
  * @param {string} query
  * @param {object} intake
  * @param {Array<object>} retrievedSources
+ * @param {Array<object>} precedents
  * @returns {string}
  */
-function buildDrafterPrompt(query, intake, retrievedSources = []) {
+function buildDrafterPrompt(query, intake, retrievedSources = [], precedents = []) {
   const {
     caseType,
     legalDomain,
@@ -47,8 +48,21 @@ function buildDrafterPrompt(query, intake, retrievedSources = []) {
     sourcesBlock = `--- RETRIEVED VERIFIED LEGAL SOURCES ---\nNo specific legal documents were retrieved from the knowledge base for this query.\n--- END SOURCES ---\n`;
   }
 
+  let precedentsBlock = "";
+  if (precedents && precedents.length > 0) {
+    const formattedP = precedents
+      .map(
+        (p, idx) =>
+          `[PRECEDENT ${idx + 1}]: "${p.caseName}" (${p.court}, ${p.dateOrYear})\nRELEVANCE: ${p.relevanceExplanation}\nSUMMARY: ${p.summary}`
+      )
+      .join("\n\n---\n\n");
+    precedentsBlock = `--- RETRIEVED VERIFIED LEGAL PRECEDENTS ---\nThe following verified court judgments were retrieved for this issue:\n\n${formattedP}\n--- END PRECEDENTS ---\n`;
+  } else {
+    precedentsBlock = `--- RETRIEVED VERIFIED LEGAL PRECEDENTS ---\nNo reliable related legal precedents were identified for this query.\n--- END PRECEDENTS ---\n`;
+  }
+
   return `You are a professional legal information specialist and drafting agent.
-Your task is to analyze the user's issue, intake summary, and verified retrieved legal sources to produce a structured, clear, and realistic legal information response.
+Your task is to analyze the user's issue, intake summary, verified legal sources, and verified precedents to produce a structured, clear, and realistic legal advisory.
 
 --- CASE INTAKE SUMMARY ---
 User Query: """${query}"""
@@ -61,11 +75,12 @@ Keywords: ${keywordsStr}
 --- END INTAKE ---
 
 ${sourcesBlock}
+${precedentsBlock}
 
 OPERATIONAL CONSTRAINTS & ACCURACY RULES:
-1. PRIORITIZE RETRIEVED SOURCES: When retrieved sources are provided, ground your explanation of laws, sections, and procedures directly in those sources.
-2. NO FABRICATIONS: NEVER invent, hallucinate, or fabricate any statute names, section numbers, or source URLs that do not exist or are not provided in the retrieved sources.
-3. EXPLICIT UNCERTAINTY: If key details are missing from the query or retrieved sources, explicitly highlight limitations and uncertainty in the "limitationsAndUncertainty" section.
+1. PRIORITIZE RETRIEVED SOURCES & PRECEDENTS: Ground your legal explanation in the provided sources and court precedents.
+2. NO FABRICATED CASE LAWS: NEVER invent, hallucinate, or fabricate any court judgment names, citations, section numbers, or source URLs not provided above.
+3. EXPLICIT UNCERTAINTY: If key details or precedents are absent, explicitly highlight limitations and uncertainty in the "limitationsAndUncertainty" section.
 4. NO ATTORNEY CLAIMS: Never state or imply that you are a licensed attorney, and never offer definitive legal guarantees or court outcome predictions.
 5. NO LEGAL CHOICE MANDATE: Frame next steps as informational options for the user to discuss with a qualified legal professional.
 
@@ -128,6 +143,7 @@ function parseDrafterResponse(raw) {
  * @param {string} query
  * @param {object} intake
  * @param {Array<object>} retrievedSources
+ * @param {Array<object>} precedents
  * @returns {Promise<{
  *   issueIdentified: string,
  *   generalLegalContext: string,
@@ -138,13 +154,13 @@ function parseDrafterResponse(raw) {
  *   disclaimer: string
  * }>}
  */
-async function runDrafter(query, intake, retrievedSources = []) {
+async function runDrafter(query, intake, retrievedSources = [], precedents = []) {
   const client = getGeminiClient();
   if (!client) {
     throw new Error("Gemini API key is not configured. Cannot run Legal Drafter Agent.");
   }
 
-  const prompt = buildDrafterPrompt(query, intake, retrievedSources);
+  const prompt = buildDrafterPrompt(query, intake, retrievedSources, precedents);
 
   const response = await client.models.generateContent({
     model: GEMINI_MODEL,

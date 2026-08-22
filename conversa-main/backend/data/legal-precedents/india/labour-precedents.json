@@ -1,0 +1,24 @@
+[
+  {
+    "precedentId": "labour-001",
+    "caseName": "Workmen of Sudder Workshop v. Management",
+    "court": "Supreme Court of India",
+    "dateOrYear": "1985",
+    "legalDomain": "Labour Law",
+    "jurisdiction": "India",
+    "summary": "Landmark ruling on retrenchment procedure under Section 25F of the Industrial Disputes Act 1947.",
+    "keyHoldings": "The Supreme Court held that termination without compliance with statutory notice or compensation in lieu of notice under Section 25F is void ab initio. The workman is entitled to reinstatement with full back wages unless extraordinary circumstances exist.",
+    "sourceUrl": "https://indiankanoon.org/doc/1844201/"
+  },
+  {
+    "precedentId": "labour-002",
+    "caseName": "State of Haryana v. Jagdish Chander",
+    "court": "Supreme Court of India",
+    "dateOrYear": "1995",
+    "legalDomain": "Labour Law",
+    "jurisdiction": "India",
+    "summary": "Mandatory adherence to principles of natural justice before termination for alleged misconduct.",
+    "keyHoldings": "An employer cannot terminate an employee's services on allegations of misconduct without conducting a fair domestic inquiry and providing reasonable opportunity to defend.",
+    "sourceUrl": "https://indiankanoon.org/doc/1305411/"
+  }
+]

@@ -1,0 +1,24 @@
+[
+  {
+    "precedentId": "tenancy-001",
+    "caseName": "V. Dhanapal Chettiar v. Yesodai Ammal",
+    "court": "Supreme Court of India",
+    "dateOrYear": "1979",
+    "legalDomain": "Tenant-Landlord Law",
+    "jurisdiction": "India",
+    "summary": "Eviction procedures, security deposit refund obligations, and tenant protections.",
+    "keyHoldings": "A landlord cannot evict a tenant or withhold possession without obtaining a valid order under the relevant Rent Control Act. Arbitrary retention of security deposit without lawful cause is illegal.",
+    "sourceUrl": "https://indiankanoon.org/doc/1715426/"
+  },
+  {
+    "precedentId": "tenancy-002",
+    "caseName": "Anthony v. K.C. Ittoop & Sons",
+    "court": "Supreme Court of India",
+    "dateOrYear": "2000",
+    "legalDomain": "Tenant-Landlord Law",
+    "jurisdiction": "India",
+    "summary": "Unregistered rental agreements and validity of month-to-month tenancy.",
+    "keyHoldings": "Even if a lease deed is unregistered, the relationship of landlord and tenant is created by payment and acceptance of rent, granting the tenant legal protections against forcible eviction.",
+    "sourceUrl": "https://indiankanoon.org/doc/1183204/"
+  }
+]

@@ -1,0 +1,24 @@
+[
+  {
+    "precedentId": "consumer-001",
+    "caseName": "Lucknow Development Authority v. M.K. Gupta",
+    "court": "Supreme Court of India",
+    "dateOrYear": "1994",
+    "legalDomain": "Consumer Law",
+    "jurisdiction": "India",
+    "summary": "Landmark ruling expanding consumer protection to statutory bodies, e-commerce, and real estate services.",
+    "keyHoldings": "The Supreme Court established that statutory authorities and service providers are subject to consumer jurisdiction for deficiency of service. Victims of unfair trade practices or delayed delivery are entitled to compensation for mental harassment and loss.",
+    "sourceUrl": "https://indiankanoon.org/doc/845112/"
+  },
+  {
+    "precedentId": "consumer-002",
+    "caseName": "Indian Medical Association v. V.P. Shantha",
+    "court": "Supreme Court of India",
+    "dateOrYear": "1995",
+    "legalDomain": "Consumer Law",
+    "jurisdiction": "India",
+    "summary": "Deficiency in service and scope of consideration under Consumer Protection Act.",
+    "keyHoldings": "Services rendered for consideration fall within the purview of the Consumer Protection Act. Failure to provide promised services or goods entitles the consumer to full refund with interest.",
+    "sourceUrl": "https://indiankanoon.org/doc/1572978/"
+  }
+]

@@ -50,6 +50,7 @@ const analyzeQuery = async (req, res) => {
     advisoryRecord.relevantEntities = result.relevantEntities || [];
     advisoryRecord.keywords = result.keywords || [];
     advisoryRecord.retrievedSources = result.retrievedSources || [];
+    advisoryRecord.precedents = result.precedents || [];
 
     // Structured Drafter Agent fields
     advisoryRecord.issueIdentified = result.issueIdentified || "";
@@ -76,6 +77,7 @@ const analyzeQuery = async (req, res) => {
         relevantEntities: advisoryRecord.relevantEntities,
         keywords: advisoryRecord.keywords,
         retrievedSources: advisoryRecord.retrievedSources,
+        precedents: advisoryRecord.precedents,
         issueIdentified: advisoryRecord.issueIdentified,
         generalLegalContext: advisoryRecord.generalLegalContext,
         possibleNextSteps: advisoryRecord.possibleNextSteps,

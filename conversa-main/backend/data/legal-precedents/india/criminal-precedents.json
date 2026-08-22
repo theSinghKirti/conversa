@@ -1,0 +1,24 @@
+[
+  {
+    "precedentId": "criminal-001",
+    "caseName": "Lalita Kumari v. Government of Uttar Pradesh",
+    "court": "Supreme Court of India",
+    "dateOrYear": "2014",
+    "legalDomain": "Criminal Law",
+    "jurisdiction": "India",
+    "summary": "Mandatory registration of FIR for cognizable offences including cheating and fraud.",
+    "keyHoldings": "The Constitution Bench held that registration of a First Information Report (FIR) under Section 154 CrPC is mandatory if the information discloses commission of a cognizable offence.",
+    "sourceUrl": "https://indiankanoon.org/doc/102390198/"
+  },
+  {
+    "precedentId": "criminal-002",
+    "caseName": "State of Haryana v. Bhajan Lal",
+    "court": "Supreme Court of India",
+    "dateOrYear": "1992",
+    "legalDomain": "Criminal Law",
+    "jurisdiction": "India",
+    "summary": "Guidelines for quashing FIRs and distinction between civil disputes and criminal fraud.",
+    "keyHoldings": "Established 7 landmark principles regarding police investigation of cognizable offences, criminal breach of trust, and fraud.",
+    "sourceUrl": "https://indiankanoon.org/doc/1033637/"
+  }
+]

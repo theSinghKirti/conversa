@@ -65,6 +65,20 @@ const LegalAdvisorySchema = new mongoose.Schema(
       ],
       default: [],
     },
+    // Legal Precedent Search — verified precedent rulings
+    precedents: {
+      type: [
+        {
+          caseName:             { type: String, default: "" },
+          court:                { type: String, default: "" },
+          dateOrYear:           { type: String, default: "" },
+          summary:              { type: String, default: "" },
+          relevanceExplanation: { type: String, default: "" },
+          sourceUrl:            { type: String, default: "" },
+        },
+      ],
+      default: [],
+    },
     // Legal Drafter Agent structured output fields
     issueIdentified: {
       type: String,

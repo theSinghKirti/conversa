@@ -767,6 +767,15 @@ export interface RetrievedSource {
     relevanceScore: number;
 }
 
+export interface LegalPrecedent {
+    caseName: string;
+    court: string;
+    dateOrYear: string;
+    summary: string;
+    relevanceExplanation: string;
+    sourceUrl?: string;
+}
+
 export interface LegalAdvisoryResult {
     _id: string;
     userId: string;
@@ -780,6 +789,7 @@ export interface LegalAdvisoryResult {
     relevantEntities: string[];
     keywords: string[];
     retrievedSources?: RetrievedSource[];
+    precedents?: LegalPrecedent[];
     issueIdentified?: string;
     generalLegalContext?: string;
     possibleNextSteps?: string[];

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { Scale, Loader2, AlertTriangle, ChevronDown, BookOpen, ExternalLink, FileText } from "lucide-react"
+import { Scale, Loader2, AlertTriangle, ChevronDown, BookOpen, ExternalLink, FileText, Gavel } from "lucide-react"
 import { legalAdvisoryApi, type LegalAdvisoryResult } from "@/lib/api"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -435,6 +435,62 @@ export default function LegalAdvisory() {
                             ) : (
                                 <p className="text-xs text-muted-foreground italic">
                                     No specific legal documents were retrieved from the knowledge base for this query. The advisory above is provided based on general legal principles.
+                                </p>
+                            )}
+                        </div>
+
+                        {/* ── Related Legal Precedents ─────────────────────────── */}
+                        <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+                            <div className="flex items-center gap-2 text-foreground font-semibold text-sm">
+                                <Gavel className="size-4 text-primary" />
+                                <span>Related Legal Precedents</span>
+                            </div>
+
+                            {result.precedents && result.precedents.length > 0 ? (
+                                <div className="space-y-3">
+                                    {result.precedents.map((precedent, index) => (
+                                        <div
+                                            key={index}
+                                            className="rounded-lg border border-border/80 bg-muted/30 p-3 space-y-2"
+                                        >
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="space-y-0.5">
+                                                    <h4 className="text-xs font-bold text-foreground">
+                                                        {precedent.caseName}
+                                                    </h4>
+                                                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                                                        <span className="font-medium text-foreground/80">{precedent.court}</span>
+                                                        <span>•</span>
+                                                        <span>{precedent.dateOrYear}</span>
+                                                    </div>
+                                                </div>
+                                                {precedent.sourceUrl && (
+                                                    <a
+                                                        href={precedent.sourceUrl}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline shrink-0"
+                                                    >
+                                                        Judgment <ExternalLink className="size-3" />
+                                                    </a>
+                                                )}
+                                            </div>
+
+                                            <p className="text-xs text-muted-foreground leading-relaxed">
+                                                {precedent.summary}
+                                            </p>
+
+                                            {precedent.relevanceExplanation && (
+                                                <p className="text-[11px] text-primary/90 font-medium bg-primary/5 rounded px-2 py-1 border border-primary/10">
+                                                    💡 {precedent.relevanceExplanation}
+                                                </p>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="text-xs text-muted-foreground italic">
+                                    No reliable related precedents were identified for this query.
                                 </p>
                             )}
                         </div>
