@@ -4,6 +4,11 @@ const LegalKnowledgeChunk = require("../../../Models/LegalKnowledgeChunk.js");
 const { embedText } = require("./embeddingService.js");
 const { similaritySearch, upsertChunks } = require("./vectorStore.js");
 const { processDocument } = require("./documentProcessor.js");
+const {
+  isDomainCompatible,
+  isGenericOrUnknownDomain,
+  normalizeDomain,
+} = require("./domainMatcher.js");
 
 /**
  * legalRetriever.js — Legal Knowledge RAG Retriever
@@ -57,33 +62,12 @@ function buildRetrievalQuery(intake) {
 
   const parts = [];
   if (jurisdiction) parts.push(jurisdiction);
-  if (caseType)    parts.push(caseType);
-  if (legalDomain) parts.push(legalDomain);
-  if (summary)     parts.push(summary);
+  if (caseType && caseType.toLowerCase() !== "generic") parts.push(caseType);
+  if (legalDomain && !isGenericOrUnknownDomain(legalDomain)) parts.push(legalDomain);
+  if (summary) parts.push(summary);
   if (keywords && keywords.length) parts.push(keywords.join(" "));
 
   return parts.join(" ");
-}
-
-/**
- * Normalizes domain strings for robust matching without requiring rigid equality.
- */
-function isDomainCompatible(sourceDomain, queryDomain) {
-  if (!queryDomain || !sourceDomain) return true;
-  const s = sourceDomain.toLowerCase();
-  const q = queryDomain.toLowerCase();
-
-  if (s === q || s.includes(q) || q.includes(s)) return true;
-  if ((s.includes("civil") || s.includes("tenancy") || s.includes("property")) &&
-      (q.includes("civil") || q.includes("tenancy") || q.includes("property"))) return true;
-  if ((s.includes("criminal") || s.includes("theft") || s.includes("ipc") || s.includes("bns")) &&
-      (q.includes("criminal") || q.includes("theft") || q.includes("ipc") || q.includes("bns"))) return true;
-  if ((s.includes("labour") || s.includes("employment")) &&
-      (q.includes("labour") || q.includes("employment"))) return true;
-  if ((s.includes("consumer") || s.includes("fraud") || s.includes("cheating")) &&
-      (q.includes("consumer") || q.includes("fraud") || q.includes("cheating"))) return true;
-
-  return false;
 }
 
 /**
@@ -113,7 +97,7 @@ function isDomainCompatible(sourceDomain, queryDomain) {
  */
 async function retrieve(intake, opts = {}) {
   const { limit = DEFAULT_LIMIT } = opts;
-  const { jurisdiction, legalDomain } = intake;
+  const { jurisdiction = "India", legalDomain } = intake;
 
   // 1. Check DB count, auto-seed if empty
   try {
@@ -148,27 +132,30 @@ async function retrieve(intake, opts = {}) {
   // 4. Perform 3-pass similarity search with pass metadata tagging
   const taggedResults = [];
   const seenChunkIds = new Set();
+  const isGeneric = isGenericOrUnknownDomain(legalDomain);
 
   try {
     // Pass 1: Jurisdiction + Legal Domain (Exact/Compatible match)
-    const pass1 = await similaritySearch(queryVec, {
-      jurisdiction,
-      legalDomain,
-      limit,
-      minScore: 0.12,
-    });
-
-    for (const chunk of pass1) {
-      seenChunkIds.add(chunk.chunkId);
-      taggedResults.push({
-        ...chunk,
-        retrievalPass: "PASS_1_EXACT",
-        confidenceLevel: chunk.relevanceScore >= 0.25 ? "HIGH" : "MEDIUM",
+    if (!isGeneric) {
+      const pass1 = await similaritySearch(queryVec, {
+        jurisdiction,
+        legalDomain,
+        limit,
+        minScore: 0.10,
       });
+
+      for (const chunk of pass1) {
+        seenChunkIds.add(chunk.chunkId);
+        taggedResults.push({
+          ...chunk,
+          retrievalPass: "PASS_1_EXACT",
+          confidenceLevel: chunk.relevanceScore >= 0.25 ? "HIGH" : "MEDIUM",
+        });
+      }
     }
 
     // Pass 2: Jurisdiction only (Domain fallback)
-    if (taggedResults.length < 2) {
+    if (taggedResults.length < 2 && !isGeneric) {
       const pass2 = await similaritySearch(queryVec, {
         jurisdiction,
         limit,
@@ -176,7 +163,7 @@ async function retrieve(intake, opts = {}) {
       });
 
       for (const chunk of pass2) {
-        if (!seenChunkIds.has(chunk.chunkId) && isDomainCompatible(chunk.legalDomain, legalDomain)) {
+        if (!seenChunkIds.has(chunk.chunkId) && isDomainCompatible(chunk.legalDomain, legalDomain, true)) {
           seenChunkIds.add(chunk.chunkId);
           taggedResults.push({
             ...chunk,
@@ -189,8 +176,7 @@ async function retrieve(intake, opts = {}) {
 
     // Pass 3: Global fallback (Quality gate: require minScore >= 0.35 for generic/ambiguous queries)
     if (taggedResults.length === 0) {
-      const isGenericDomain = !legalDomain || legalDomain.toLowerCase().includes("civil") || legalDomain.toLowerCase().includes("general");
-      const requiredScore = isGenericDomain ? 0.35 : 0.12;
+      const requiredScore = isGeneric ? 0.35 : 0.10;
 
       const pass3 = await similaritySearch(queryVec, {
         limit,
@@ -198,13 +184,25 @@ async function retrieve(intake, opts = {}) {
       });
 
       for (const chunk of pass3) {
-        if (!seenChunkIds.has(chunk.chunkId) && isDomainCompatible(chunk.legalDomain, legalDomain)) {
-          seenChunkIds.add(chunk.chunkId);
-          taggedResults.push({
-            ...chunk,
-            retrievalPass: "PASS_3_GLOBAL",
-            confidenceLevel: "LOW",
-          });
+        if (!seenChunkIds.has(chunk.chunkId)) {
+          if (isGeneric) {
+            // Unrelated/generic queries must pass strict quality gate AND domain compatibility
+            if (chunk.relevanceScore >= 0.35 && isDomainCompatible(chunk.legalDomain, legalDomain, true)) {
+              seenChunkIds.add(chunk.chunkId);
+              taggedResults.push({
+                ...chunk,
+                retrievalPass: "PASS_3_GLOBAL",
+                confidenceLevel: "LOW",
+              });
+            }
+          } else if (isDomainCompatible(chunk.legalDomain, legalDomain, true)) {
+            seenChunkIds.add(chunk.chunkId);
+            taggedResults.push({
+              ...chunk,
+              retrievalPass: "PASS_3_GLOBAL",
+              confidenceLevel: "LOW",
+            });
+          }
         }
       }
     }

@@ -1,4 +1,5 @@
 const LegalKnowledgeChunk = require("../../../Models/LegalKnowledgeChunk.js");
+const { getDomainFilter } = require("./domainMatcher.js");
 
 /**
  * vectorStore.js — Provider-agnostic vector store interface.
@@ -144,7 +145,16 @@ async function similaritySearch(queryVec, opts = {}) {
   // Pre-filter stage (reduces the number of dot products computed)
   const matchStage = {};
   if (jurisdiction) matchStage.jurisdiction = jurisdiction;
-  if (legalDomain)  matchStage.legalDomain  = legalDomain;
+  if (legalDomain) {
+    const domainFilter = getDomainFilter(legalDomain);
+    if (domainFilter.length === 1) {
+      matchStage.legalDomain = domainFilter[0];
+    } else if (domainFilter.length > 1) {
+      matchStage.legalDomain = { $in: domainFilter };
+    } else {
+      matchStage.legalDomain = legalDomain;
+    }
+  }
 
   const pipeline = [
     // 1. Pre-filter by jurisdiction/domain before computing similarity

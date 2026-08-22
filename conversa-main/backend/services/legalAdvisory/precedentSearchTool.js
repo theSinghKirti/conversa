@@ -1,4 +1,5 @@
 const LegalPrecedent = require("../../Models/LegalPrecedent.js");
+const { getDomainFilter } = require("./rag/domainMatcher.js");
 
 /**
  * precedentSearchTool.js — Provider-agnostic Legal Precedent search interface.
@@ -110,7 +111,16 @@ async function searchPrecedents(queryVec, opts = {}) {
 
   const matchStage = {};
   if (jurisdiction) matchStage.jurisdiction = jurisdiction;
-  if (legalDomain)  matchStage.legalDomain  = legalDomain;
+  if (legalDomain) {
+    const domainFilter = getDomainFilter(legalDomain);
+    if (domainFilter.length === 1) {
+      matchStage.legalDomain = domainFilter[0];
+    } else if (domainFilter.length > 1) {
+      matchStage.legalDomain = { $in: domainFilter };
+    } else {
+      matchStage.legalDomain = legalDomain;
+    }
+  }
 
   const pipeline = [
     ...(Object.keys(matchStage).length ? [{ $match: matchStage }] : []),

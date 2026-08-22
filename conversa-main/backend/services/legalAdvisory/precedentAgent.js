@@ -3,12 +3,16 @@ const path = require("path");
 const LegalPrecedent = require("../../Models/LegalPrecedent.js");
 const { embedText } = require("./rag/embeddingService.js");
 const { searchPrecedents, upsertPrecedents } = require("./precedentSearchTool.js");
+const {
+  isDomainCompatible,
+  isGenericOrUnknownDomain,
+} = require("./rag/domainMatcher.js");
 
 /**
  * precedentAgent.js — Legal Precedent Search Agent
  *
  * Enforces precedent traceability (caseName, court, dateOrYear, citation, source, sourceUrl),
- * pass metadata tagging, and relevance quality filtering.
+ * pass metadata tagging, domain compatibility, and relevance quality filtering.
  *
  * STATUS CODES:
  *   - "SUCCESS": Store searched and 1+ relevant court precedents returned
@@ -50,16 +54,16 @@ async function autoSeedPrecedentStore() {
 }
 
 /**
- * Constructs a detailed search query using all structured case intake fields.
+ * Constructs a clean, structured search query using case intake fields without artificial bias.
  */
 function buildDetailedPrecedentQuery(intake) {
   const { caseType, legalDomain, summary, relevantEntities, keywords, jurisdiction } = intake;
 
   const parts = [];
   if (jurisdiction) parts.push(jurisdiction);
-  if (caseType)    parts.push(caseType);
-  if (legalDomain) parts.push(legalDomain);
-  if (summary)     parts.push(summary);
+  if (caseType && caseType.toLowerCase() !== "generic") parts.push(caseType);
+  if (legalDomain && !isGenericOrUnknownDomain(legalDomain)) parts.push(legalDomain);
+  if (summary) parts.push(summary);
 
   if (Array.isArray(relevantEntities) && relevantEntities.length > 0) {
     parts.push(`parties: ${relevantEntities.join(" ")}`);
@@ -69,7 +73,6 @@ function buildDetailedPrecedentQuery(intake) {
     parts.push(keywords.join(" "));
   }
 
-  parts.push("court judgment landmark ruling legal precedent");
   return parts.join(" ");
 }
 
@@ -80,21 +83,6 @@ function generateRelevanceExplanation(precedent, intake) {
   const domain = precedent.legalDomain || intake.legalDomain || "legal";
   const citeStr = precedent.citation ? ` [${precedent.citation}]` : "";
   return `Landmark ${precedent.court} judgment (${precedent.dateOrYear})${citeStr} establishing binding legal principles for ${domain.toLowerCase()} disputes in ${precedent.jurisdiction || "India"}.`;
-}
-
-function isGenericOrNonLegalDomain(domain) {
-  if (!domain || typeof domain !== "string") return true;
-  const d = domain.toLowerCase().trim();
-  return (
-    d.includes("civil") ||
-    d.includes("general") ||
-    d.includes("not applicable") ||
-    d.includes("n/a") ||
-    d.includes("none") ||
-    d.includes("other") ||
-    d.includes("non-legal") ||
-    d.includes("information")
-  );
 }
 
 /**
@@ -114,6 +102,8 @@ function isGenericOrNonLegalDomain(domain) {
  *     summary: string,
  *     relevanceExplanation: string,
  *     sourceUrl: string,
+ *     legalDomain: string,
+ *     jurisdiction: string,
  *     relevanceScore: number,
  *     retrievalPass: string,
  *     confidenceLevel: string
@@ -140,7 +130,7 @@ async function runPrecedentSearch(intake, legalSources = [], jurisdiction = "Ind
     return { status: "FAILED", precedents: [] };
   }
 
-  // 2. Build detailed query
+  // 2. Build clean detailed query
   const queryText = buildDetailedPrecedentQuery(intake);
   console.log(`[PrecedentAgent] Search Query: "${queryText.slice(0, 140)}…"`);
 
@@ -156,16 +146,16 @@ async function runPrecedentSearch(intake, legalSources = [], jurisdiction = "Ind
   // 4. Perform 3-pass search with pass metadata tagging
   const taggedMatches = [];
   const seenIds = new Set();
-  const isGeneric = isGenericOrNonLegalDomain(intake.legalDomain);
+  const isGeneric = isGenericOrUnknownDomain(intake.legalDomain);
 
   try {
-    // Pass 1: Jurisdiction + Legal Domain
+    // Pass 1: Jurisdiction + Legal Domain (Exact/Compatible match)
     if (!isGeneric) {
       const pass1 = await searchPrecedents(queryVec, {
         jurisdiction,
         legalDomain: intake.legalDomain,
         limit: 3,
-        minScore: 0.12,
+        minScore: 0.08,
       });
 
       for (const item of pass1) {
@@ -178,19 +168,17 @@ async function runPrecedentSearch(intake, legalSources = [], jurisdiction = "Ind
       }
     }
 
-    // Pass 2: Jurisdiction only (Require minScore >= 0.35 for generic/non-legal queries)
-    if (taggedMatches.length === 0) {
-      const pass2Score = isGeneric ? 0.35 : 0.08;
-
+    // Pass 2: Jurisdiction only (Domain fallback with domain compatibility check)
+    if (taggedMatches.length < 2 && !isGeneric) {
       const pass2 = await searchPrecedents(queryVec, {
         jurisdiction,
         limit: 3,
-        minScore: pass2Score,
+        minScore: 0.08,
       });
 
       for (const item of pass2) {
         const id = item.precedentId || item.caseName;
-        if (!seenIds.has(id)) {
+        if (!seenIds.has(id) && isDomainCompatible(item.legalDomain, intake.legalDomain, true)) {
           seenIds.add(id);
           taggedMatches.push({
             ...item,
@@ -203,7 +191,7 @@ async function runPrecedentSearch(intake, legalSources = [], jurisdiction = "Ind
 
     // Pass 3: Global fallback (Quality gate: require minScore >= 0.35 for generic/ambiguous queries)
     if (taggedMatches.length === 0) {
-      const requiredScore = isGeneric ? 0.35 : 0.12;
+      const requiredScore = isGeneric ? 0.35 : 0.08;
 
       const pass3 = await searchPrecedents(queryVec, {
         limit: 3,
@@ -213,12 +201,23 @@ async function runPrecedentSearch(intake, legalSources = [], jurisdiction = "Ind
       for (const item of pass3) {
         const id = item.precedentId || item.caseName;
         if (!seenIds.has(id)) {
-          seenIds.add(id);
-          taggedMatches.push({
-            ...item,
-            retrievalPass: "PASS_3_GLOBAL",
-            confidenceLevel: "LOW",
-          });
+          if (isGeneric) {
+            if (item.relevanceScore >= 0.35 && isDomainCompatible(item.legalDomain, intake.legalDomain, true)) {
+              seenIds.add(id);
+              taggedMatches.push({
+                ...item,
+                retrievalPass: "PASS_3_GLOBAL",
+                confidenceLevel: "LOW",
+              });
+            }
+          } else if (isDomainCompatible(item.legalDomain, intake.legalDomain, true)) {
+            seenIds.add(id);
+            taggedMatches.push({
+              ...item,
+              retrievalPass: "PASS_3_GLOBAL",
+              confidenceLevel: "LOW",
+            });
+          }
         }
       }
     }
@@ -237,6 +236,8 @@ async function runPrecedentSearch(intake, legalSources = [], jurisdiction = "Ind
     summary:              item.summary || item.keyHoldings || "",
     relevanceExplanation: generateRelevanceExplanation(item, intake),
     sourceUrl:            item.sourceUrl || "",
+    legalDomain:          item.legalDomain || "",
+    jurisdiction:         item.jurisdiction || "India",
     relevanceScore:       item.relevanceScore,
     retrievalPass:        item.retrievalPass,
     confidenceLevel:      item.confidenceLevel,
