@@ -51,6 +51,20 @@ const LegalAdvisorySchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    // RAG — legal knowledge chunks retrieved for this advisory
+    retrievedSources: {
+      type: [
+        {
+          title:          { type: String, default: "" },
+          content:        { type: String, default: "" }, // short excerpt shown to user
+          source:         { type: String, default: "" },
+          sourceUrl:      { type: String, default: "" },
+          legalDomain:    { type: String, default: "" },
+          relevanceScore: { type: Number, default: 0  },
+        },
+      ],
+      default: [],
+    },
   },
   {
     timestamps: true,

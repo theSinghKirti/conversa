@@ -43,6 +43,7 @@ const analyzeQuery = async (req, res) => {
       advisoryResponse,
       relevantEntities,
       keywords,
+      retrievedSources,
     } = await generateAdvisory(
       query.trim(),
       jurisdiction.trim() || "India"
@@ -56,6 +57,7 @@ const analyzeQuery = async (req, res) => {
     advisoryRecord.advisoryResponse = advisoryResponse;
     advisoryRecord.relevantEntities = relevantEntities || [];
     advisoryRecord.keywords = keywords || [];
+    advisoryRecord.retrievedSources = retrievedSources || [];
     await advisoryRecord.save();
 
     return res.status(200).json({
@@ -72,6 +74,7 @@ const analyzeQuery = async (req, res) => {
         advisoryResponse: advisoryRecord.advisoryResponse,
         relevantEntities: advisoryRecord.relevantEntities,
         keywords: advisoryRecord.keywords,
+        retrievedSources: advisoryRecord.retrievedSources,
         createdAt: advisoryRecord.createdAt,
         updatedAt: advisoryRecord.updatedAt,
       },

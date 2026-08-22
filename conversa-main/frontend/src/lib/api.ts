@@ -758,6 +758,15 @@ export const activationApi = {
 
 /* ─── legal advisory ─────────────────────────────────────────────────────── */
 
+export interface RetrievedSource {
+    title: string;
+    content: string;
+    source: string;
+    sourceUrl?: string;
+    legalDomain: string;
+    relevanceScore: number;
+}
+
 export interface LegalAdvisoryResult {
     _id: string;
     userId: string;
@@ -770,6 +779,7 @@ export interface LegalAdvisoryResult {
     advisoryResponse: string;
     relevantEntities: string[];
     keywords: string[];
+    retrievedSources?: RetrievedSource[];
     createdAt: string;
     updatedAt: string;
 }

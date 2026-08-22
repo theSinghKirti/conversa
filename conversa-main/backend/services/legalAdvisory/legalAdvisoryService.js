@@ -1,6 +1,7 @@
 const { GoogleGenAI } = require("@google/genai");
 const { GEMINI_API_KEY, GEMINI_MODEL } = require("../../secrets.js");
 const { runIntake } = require("./caseIntakeAgent.js");
+const { retrieve } = require("./rag/legalRetriever.js");
 
 /**
  * Lazy-initialized Gemini client — same pattern used in message-controller.js.
@@ -14,15 +15,15 @@ const getGeminiClient = () => {
 };
 
 /**
- * Builds the Stage 2 advisory prompt using enriched intake data from the
- * Case Intake Agent. The model now receives pre-classified context so it can
- * focus on producing a high-quality advisory rather than re-doing classification.
+ * Builds the Stage 3 advisory prompt using enriched intake data and retrieved
+ * legal knowledge chunks from the RAG layer.
  *
  * @param {string} query
- * @param {object} intake  — structured output from caseIntakeAgent.runIntake()
+ * @param {object} intake — output from caseIntakeAgent.runIntake()
+ * @param {Array<object>} retrievedSources — chunks from legalRetriever.retrieve()
  * @returns {string}
  */
-function buildAdvisoryPrompt(query, intake) {
+function buildAdvisoryPrompt(query, intake, retrievedSources = []) {
   const {
     caseType,
     legalDomain,
@@ -32,10 +33,27 @@ function buildAdvisoryPrompt(query, intake) {
     keywords,
   } = intake;
 
-  const entitiesStr  = relevantEntities.length ? relevantEntities.join(", ") : "N/A";
-  const keywordsStr  = keywords.length         ? keywords.join(", ")         : "N/A";
+  const entitiesStr = relevantEntities.length ? relevantEntities.join(", ") : "N/A";
+  const keywordsStr = keywords.length ? keywords.join(", ") : "N/A";
 
-  return `You are a knowledgeable legal information assistant. A legal case intake has already been completed for this user's issue. Use the pre-classified intake data to produce a thorough, well-structured advisory.
+  // Format retrieved legal sources for prompt injection
+  let sourcesContextBlock = "";
+  if (retrievedSources.length > 0) {
+    const formattedSources = retrievedSources
+      .map(
+        (src, idx) =>
+          `SOURCE [${idx + 1}]: "${src.title}" (${src.source})\nURL: ${
+            src.sourceUrl || "N/A"
+          }\nRELEVANT EXCERPT:\n${src.content}`
+      )
+      .join("\n\n---\n\n");
+
+    sourcesContextBlock = `\n--- RETRIEVED LEGAL KNOWLEDGE SOURCES ---\nThe following verified legal excerpts were retrieved from the knowledge base for this case. You MUST use these sources where applicable:\n\n${formattedSources}\n--- END RETRIEVED SOURCES ---\n`;
+  } else {
+    sourcesContextBlock = `\n--- RETRIEVED LEGAL KNOWLEDGE SOURCES ---\nNo specific legal documents were retrieved from the knowledge base for this query.\n--- END RETRIEVED SOURCES ---\n`;
+  }
+
+  return `You are a knowledgeable legal information assistant. A case intake and legal knowledge search have been completed for this user's situation.
 
 --- INTAKE SUMMARY ---
 Original Query: """${query}"""
@@ -46,8 +64,17 @@ Situation Summary: ${summary}
 Relevant Entities: ${entitiesStr}
 Key Legal Terms: ${keywordsStr}
 --- END INTAKE ---
+${sourcesContextBlock}
+CRITICAL INSTRUCTIONS FOR CITATIONS & SOURCE ACCURACY:
+1. Do NOT invent, fabricate, or hallucinate any legal citations, section numbers, or source URLs that are not provided in the RETRIEVED LEGAL KNOWLEDGE SOURCES section above.
+2. If retrieved sources ARE provided above, explicitly cite them in your response when referring to specific statutory rules, rights, or procedures.
+3. Clearly distinguish between:
+   - Specific information directly supported by the retrieved sources above
+   - General legal principles or background explanation
+   - Any areas of uncertainty or facts needing further clarification from a lawyer
+4. If no retrieved sources were provided, base your response on general legal principles applicable in ${jurisdiction} for a ${caseType} under ${legalDomain}, and explicitly note that user should verify local rules with a lawyer.
 
-Using this context, return ONLY a raw JSON object (no markdown, no code fences) with exactly these keys:
+Return ONLY a raw JSON object (no markdown, no code fences) with exactly these keys:
 
 {
   "caseType": "${caseType}",
@@ -59,7 +86,7 @@ ISSUE IDENTIFIED:
 [Describe the core legal issue in plain language, referencing the classified case type and entities]
 
 GENERAL LEGAL CONTEXT:
-[Explain the relevant laws, statutes, rights, or legal principles that apply in ${jurisdiction} for a ${caseType} under ${legalDomain}]
+[Explain the relevant laws, statutes, rights, or legal principles that apply in ${jurisdiction} for a ${caseType} under ${legalDomain}. Attribute specific rules to retrieved sources where available.]
 
 POSSIBLE NEXT STEPS:
 [List 3–5 numbered actionable steps the user can take]
@@ -95,15 +122,16 @@ function parseAdvisoryResponse(raw) {
 }
 
 /**
- * Two-stage Legal Advisory orchestrator.
+ * Three-stage Legal Advisory orchestrator.
  *
  * Stage 1 — Case Intake Agent (caseIntakeAgent.js):
  *   Classifies the issue, extracts entities & keywords, writes a neutral summary.
- *   Does NOT produce any legal answer.
  *
- * Stage 2 — Advisory Generator (this file):
- *   Receives the enriched intake data and generates a full, contextualised
- *   advisory response using a targeted Gemini prompt.
+ * Stage 2 — Legal RAG Retriever (rag/legalRetriever.js):
+ *   Performs semantic vector search over legal knowledge base for relevant chunks.
+ *
+ * Stage 3 — Advisory Generator (this file):
+ *   Combines query, intake data, and retrieved legal sources to generate a structured advisory.
  *
  * @param {string} query
  * @param {string} jurisdiction
@@ -113,7 +141,8 @@ function parseAdvisoryResponse(raw) {
  *   caseSummary: string,
  *   advisoryResponse: string,
  *   relevantEntities: string[],
- *   keywords: string[]
+ *   keywords: string[],
+ *   retrievedSources: Array<object>
  * }>}
  */
 async function generateAdvisory(query, jurisdiction = "India") {
@@ -126,14 +155,24 @@ async function generateAdvisory(query, jurisdiction = "India") {
   console.log("[legalAdvisoryService] Stage 1 — Running Case Intake Agent…");
   const intake = await runIntake(query, jurisdiction);
   console.log("[legalAdvisoryService] Intake complete:", {
-    caseType:    intake.caseType,
+    caseType: intake.caseType,
     legalDomain: intake.legalDomain,
-    keywords:    intake.keywords,
+    keywords: intake.keywords,
   });
 
-  // ── Stage 2: Advisory Generation (with enriched context) ─────────────────
-  console.log("[legalAdvisoryService] Stage 2 — Generating advisory using intake data…");
-  const advisoryPrompt = buildAdvisoryPrompt(query, intake);
+  // ── Stage 2: Legal RAG Retrieval ─────────────────────────────────────────
+  console.log("[legalAdvisoryService] Stage 2 — Retrieving legal knowledge sources via RAG…");
+  let retrievedSources = [];
+  try {
+    retrievedSources = await retrieve(intake, { limit: 4, minScore: 0.5 });
+  } catch (ragErr) {
+    console.error("[legalAdvisoryService] RAG Retrieval error (proceeding without sources):", ragErr.message);
+  }
+  console.log(`[legalAdvisoryService] Retrieved ${retrievedSources.length} legal knowledge chunk(s).`);
+
+  // ── Stage 3: Advisory Generation (with intake + RAG context) ─────────────
+  console.log("[legalAdvisoryService] Stage 3 — Generating advisory using intake + RAG context…");
+  const advisoryPrompt = buildAdvisoryPrompt(query, intake, retrievedSources);
 
   const response = await geminiClient.models.generateContent({
     model: GEMINI_MODEL,
@@ -152,15 +191,15 @@ async function generateAdvisory(query, jurisdiction = "India") {
   const parsed = parseAdvisoryResponse(rawText);
 
   return {
-    // Advisory fields — use intake values as authoritative fallback for classification
-    caseType:         parsed.caseType        || intake.caseType,
-    legalDomain:      parsed.legalDomain     || intake.legalDomain,
-    caseSummary:      parsed.caseSummary     || intake.summary,
+    caseType: parsed.caseType || intake.caseType,
+    legalDomain: parsed.legalDomain || intake.legalDomain,
+    caseSummary: parsed.caseSummary || intake.summary,
     advisoryResponse: parsed.advisoryResponse || "",
-    // Pass intake enrichment through for storage
     relevantEntities: intake.relevantEntities,
-    keywords:         intake.keywords,
+    keywords: intake.keywords,
+    retrievedSources,
   };
 }
 
 module.exports = { generateAdvisory };
+
