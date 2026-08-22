@@ -11,11 +11,12 @@ const TEST_QUERIES = [
   "My purse was stolen from my office.",
   "My landlord is demanding more rent than agreed in our rental agreement.",
   "My employer terminated me without notice.",
+  "What is the capital of France and how to make pizza?", // Intentionally unrelated query
 ];
 
 async function runE2ETests() {
   console.log("=================================================");
-  console.log(" Legal Advisory Pipeline End-to-End Test Suite");
+  console.log(" Legal Advisory Hardened Pipeline E2E Suite");
   console.log("=================================================\n");
 
   const mongoUri = MONGO_URI || "mongodb://localhost:27017/";
@@ -41,13 +42,14 @@ async function runE2ETests() {
       console.log(`- RAG Search Status:          "${result.ragSearchStatus}"`);
       console.log(`- RAG Documents Retrieved:    ${result.retrievedSources.length}`);
       result.retrievedSources.forEach((src, idx) => {
-        console.log(`   [RAG ${idx + 1}] "${src.title}" (${src.source}) - score ${src.relevanceScore}`);
+        console.log(`   [RAG ${idx + 1}] "${src.title}" (${src.source}) - score ${src.relevanceScore} [${src.retrievalPass} / ${src.confidenceLevel}]`);
       });
 
       console.log(`- Precedent Search Status:    "${result.precedentSearchStatus}"`);
       console.log(`- Precedents Returned:        ${result.precedents.length}`);
       result.precedents.forEach((p, idx) => {
-        console.log(`   [Precedent ${idx + 1}] "${p.caseName}" (${p.court}, ${p.dateOrYear})`);
+        const citeStr = p.citation ? ` [${p.citation}]` : "";
+        console.log(`   [Precedent ${idx + 1}] "${p.caseName}" (${p.court}, ${p.dateOrYear})${citeStr} - score ${p.relevanceScore} [${p.retrievalPass} / ${p.confidenceLevel}]`);
       });
 
       console.log(`- Issue Identified Present:   ${!!result.issueIdentified}`);

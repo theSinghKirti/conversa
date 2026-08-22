@@ -6,10 +6,9 @@ const { similaritySearch, upsertChunks } = require("./vectorStore.js");
 const { processDocument } = require("./documentProcessor.js");
 
 /**
- * legalRetriever.js
+ * legalRetriever.js — Legal Knowledge RAG Retriever
  *
- * The Legal RAG Retriever takes structured Case Intake output and retrieves
- * the most semantically relevant legal knowledge chunks from the vector store.
+ * Enforces quality filtering, domain normalization, and confidence metadata tagging.
  *
  * STATUS CODES:
  *   - "SUCCESS": Vector store searched and 1+ relevant knowledge chunks returned
@@ -18,8 +17,7 @@ const { processDocument } = require("./documentProcessor.js");
  *   - "FAILED": Embedding API error or DB aggregation failure
  */
 
-const DEFAULT_LIMIT     = 5;
-const DEFAULT_MIN_SCORE = 0.25;
+const DEFAULT_LIMIT = 5;
 
 /**
  * Auto-seeds the vector store from local seed files if MongoDB collection is empty.
@@ -68,6 +66,27 @@ function buildRetrievalQuery(intake) {
 }
 
 /**
+ * Normalizes domain strings for robust matching without requiring rigid equality.
+ */
+function isDomainCompatible(sourceDomain, queryDomain) {
+  if (!queryDomain || !sourceDomain) return true;
+  const s = sourceDomain.toLowerCase();
+  const q = queryDomain.toLowerCase();
+
+  if (s === q || s.includes(q) || q.includes(s)) return true;
+  if ((s.includes("civil") || s.includes("tenancy") || s.includes("property")) &&
+      (q.includes("civil") || q.includes("tenancy") || q.includes("property"))) return true;
+  if ((s.includes("criminal") || s.includes("theft") || s.includes("ipc") || s.includes("bns")) &&
+      (q.includes("criminal") || q.includes("theft") || q.includes("ipc") || q.includes("bns"))) return true;
+  if ((s.includes("labour") || s.includes("employment")) &&
+      (q.includes("labour") || q.includes("employment"))) return true;
+  if ((s.includes("consumer") || s.includes("fraud") || s.includes("cheating")) &&
+      (q.includes("consumer") || q.includes("fraud") || q.includes("cheating"))) return true;
+
+  return false;
+}
+
+/**
  * Retrieve relevant legal knowledge chunks for a given case intake.
  *
  * @param {{
@@ -77,7 +96,7 @@ function buildRetrievalQuery(intake) {
  *   keywords: string[],
  *   jurisdiction: string
  * }} intake
- * @param {{ limit?: number, minScore?: number }} [opts]
+ * @param {{ limit?: number }} [opts]
  * @returns {Promise<{
  *   status: "SUCCESS" | "NO_RESULTS" | "NOT_CONFIGURED" | "FAILED",
  *   sources: Array<{
@@ -86,25 +105,26 @@ function buildRetrievalQuery(intake) {
  *     source: string,
  *     sourceUrl: string,
  *     legalDomain: string,
- *     relevanceScore: number
+ *     relevanceScore: number,
+ *     retrievalPass: string,
+ *     confidenceLevel: string
  *   }>
  * }>}
  */
 async function retrieve(intake, opts = {}) {
-  const { limit = DEFAULT_LIMIT, minScore = DEFAULT_MIN_SCORE } = opts;
+  const { limit = DEFAULT_LIMIT } = opts;
   const { jurisdiction, legalDomain } = intake;
 
-  // 1. Check if vector store contains documents, auto-seed if empty
+  // 1. Check DB count, auto-seed if empty
   try {
     let docCount = await LegalKnowledgeChunk.countDocuments();
     if (docCount === 0) {
-      console.warn("[legalRetriever] LegalKnowledgeChunk store is empty in MongoDB (0 docs). Attempting auto-seeding…");
+      console.warn("[legalRetriever] Store empty in MongoDB. Attempting auto-seeding…");
       await autoSeedKnowledgeStore();
       docCount = await LegalKnowledgeChunk.countDocuments();
     }
 
     if (docCount === 0) {
-      console.warn("[legalRetriever] LegalKnowledgeChunk store remains empty after auto-seeding attempt.");
       return { status: "NOT_CONFIGURED", sources: [] };
     }
   } catch (dbErr) {
@@ -112,9 +132,9 @@ async function retrieve(intake, opts = {}) {
     return { status: "FAILED", sources: [] };
   }
 
-  // 2. Build detailed query
+  // 2. Build search query
   const query = buildRetrievalQuery(intake);
-  console.log(`[legalRetriever] Query: "${query.slice(0, 120)}…"`);
+  console.log(`[legalRetriever] Search Query: "${query.slice(0, 120)}…"`);
 
   // 3. Generate query embedding
   let queryVec;
@@ -125,58 +145,88 @@ async function retrieve(intake, opts = {}) {
     return { status: "FAILED", sources: [] };
   }
 
-  // 4. Perform 3-pass similarity search
-  let results = [];
+  // 4. Perform 3-pass similarity search with pass metadata tagging
+  const taggedResults = [];
+  const seenChunkIds = new Set();
+
   try {
-    // Pass 1: Filter by jurisdiction + legalDomain
-    results = await similaritySearch(queryVec, {
+    // Pass 1: Jurisdiction + Legal Domain (Exact/Compatible match)
+    const pass1 = await similaritySearch(queryVec, {
       jurisdiction,
       legalDomain,
       limit,
       minScore: 0.12,
     });
 
-    // Pass 2: Filter by jurisdiction only if pass 1 gave fewer than 2 results
-    if (results.length < 2) {
+    for (const chunk of pass1) {
+      seenChunkIds.add(chunk.chunkId);
+      taggedResults.push({
+        ...chunk,
+        retrievalPass: "PASS_1_EXACT",
+        confidenceLevel: chunk.relevanceScore >= 0.25 ? "HIGH" : "MEDIUM",
+      });
+    }
+
+    // Pass 2: Jurisdiction only (Domain fallback)
+    if (taggedResults.length < 2) {
       const pass2 = await similaritySearch(queryVec, {
         jurisdiction,
         limit,
         minScore: 0.08,
       });
-      // Deduplicate
-      const existingIds = new Set(results.map((r) => r.chunkId));
-      for (const item of pass2) {
-        if (!existingIds.has(item.chunkId)) {
-          results.push(item);
-          existingIds.add(item.chunkId);
+
+      for (const chunk of pass2) {
+        if (!seenChunkIds.has(chunk.chunkId) && isDomainCompatible(chunk.legalDomain, legalDomain)) {
+          seenChunkIds.add(chunk.chunkId);
+          taggedResults.push({
+            ...chunk,
+            retrievalPass: "PASS_2_JURISDICTION",
+            confidenceLevel: "MEDIUM",
+          });
         }
       }
     }
 
-    // Pass 3: Global search if still 0 results
-    if (results.length === 0) {
-      results = await similaritySearch(queryVec, {
+    // Pass 3: Global fallback (Quality gate: require minScore >= 0.35 for generic/ambiguous queries)
+    if (taggedResults.length === 0) {
+      const isGenericDomain = !legalDomain || legalDomain.toLowerCase().includes("civil") || legalDomain.toLowerCase().includes("general");
+      const requiredScore = isGenericDomain ? 0.35 : 0.12;
+
+      const pass3 = await similaritySearch(queryVec, {
         limit,
-        minScore: 0.05,
+        minScore: requiredScore,
       });
+
+      for (const chunk of pass3) {
+        if (!seenChunkIds.has(chunk.chunkId) && isDomainCompatible(chunk.legalDomain, legalDomain)) {
+          seenChunkIds.add(chunk.chunkId);
+          taggedResults.push({
+            ...chunk,
+            retrievalPass: "PASS_3_GLOBAL",
+            confidenceLevel: "LOW",
+          });
+        }
+      }
     }
   } catch (searchErr) {
     console.error("[legalRetriever] Vector aggregation failed:", searchErr.message);
     return { status: "FAILED", sources: [] };
   }
 
-  // 5. Shape output & status
-  const formattedSources = results.slice(0, limit).map((chunk) => ({
-    title:          chunk.title,
-    content:        chunk.content,
-    source:         chunk.source,
-    sourceUrl:      chunk.sourceUrl || "",
-    legalDomain:    chunk.legalDomain,
-    relevanceScore: chunk.relevanceScore,
+  // 5. Shape final sources payload
+  const formattedSources = taggedResults.slice(0, limit).map((chunk) => ({
+    title:           chunk.title,
+    content:         chunk.content,
+    source:          chunk.source,
+    sourceUrl:       chunk.sourceUrl || "",
+    legalDomain:     chunk.legalDomain,
+    relevanceScore:  chunk.relevanceScore,
+    retrievalPass:   chunk.retrievalPass,
+    confidenceLevel: chunk.confidenceLevel,
   }));
 
   const status = formattedSources.length > 0 ? "SUCCESS" : "NO_RESULTS";
-  console.log(`[legalRetriever] Completed with status="${status}" (${formattedSources.length} source(s) found).`);
+  console.log(`[legalRetriever] Search complete with status="${status}" (${formattedSources.length} source(s) returned).`);
 
   return {
     status,

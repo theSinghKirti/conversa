@@ -5,10 +5,10 @@ const { embedText } = require("./rag/embeddingService.js");
 const { searchPrecedents, upsertPrecedents } = require("./precedentSearchTool.js");
 
 /**
- * precedentAgent.js
+ * precedentAgent.js — Legal Precedent Search Agent
  *
- * Precedent Search Agent responsible for retrieving verified court rulings
- * and case law precedents.
+ * Enforces precedent traceability (caseName, court, dateOrYear, citation, source, sourceUrl),
+ * pass metadata tagging, and relevance quality filtering.
  *
  * STATUS CODES:
  *   - "SUCCESS": Store searched and 1+ relevant court precedents returned
@@ -34,7 +34,7 @@ async function autoSeedPrecedentStore() {
       const recordsToUpsert = [];
 
       for (const item of precedents) {
-        const textToEmbed = `${item.caseName} ${item.court} ${item.legalDomain} ${item.summary} ${item.keyHoldings}`;
+        const textToEmbed = `${item.caseName} ${item.court} ${item.citation || ""} ${item.legalDomain} ${item.summary} ${item.keyHoldings}`;
         const vector = await embedText(textToEmbed);
         recordsToUpsert.push({ ...item, vector });
       }
@@ -51,9 +51,6 @@ async function autoSeedPrecedentStore() {
 
 /**
  * Constructs a detailed search query using all structured case intake fields.
- *
- * @param {object} intake
- * @returns {string}
  */
 function buildDetailedPrecedentQuery(intake) {
   const { caseType, legalDomain, summary, relevantEntities, keywords, jurisdiction } = intake;
@@ -81,7 +78,8 @@ function buildDetailedPrecedentQuery(intake) {
  */
 function generateRelevanceExplanation(precedent, intake) {
   const domain = precedent.legalDomain || intake.legalDomain || "legal";
-  return `Landmark ${precedent.court} judgment (${precedent.dateOrYear}) establishing binding legal principles for ${domain.toLowerCase()} disputes in ${precedent.jurisdiction || "India"}.`;
+  const citeStr = precedent.citation ? ` [${precedent.citation}]` : "";
+  return `Landmark ${precedent.court} judgment (${precedent.dateOrYear})${citeStr} establishing binding legal principles for ${domain.toLowerCase()} disputes in ${precedent.jurisdiction || "India"}.`;
 }
 
 /**
@@ -96,26 +94,30 @@ function generateRelevanceExplanation(precedent, intake) {
  *     caseName: string,
  *     court: string,
  *     dateOrYear: string,
+ *     citation: string,
+ *     source: string,
  *     summary: string,
  *     relevanceExplanation: string,
- *     sourceUrl: string
+ *     sourceUrl: string,
+ *     relevanceScore: number,
+ *     retrievalPass: string,
+ *     confidenceLevel: string
  *   }>
  * }>}
  */
 async function runPrecedentSearch(intake, legalSources = [], jurisdiction = "India") {
   console.log("[PrecedentAgent] Stage 3 — Starting Precedent Search…");
 
-  // 1. Check DB population for LegalPrecedent, auto-seed if empty
+  // 1. Check DB count, auto-seed if empty
   try {
     let precedentCount = await LegalPrecedent.countDocuments();
     if (precedentCount === 0) {
-      console.warn("[PrecedentAgent] LegalPrecedent collection is empty in MongoDB (0 docs). Attempting auto-seeding…");
+      console.warn("[PrecedentAgent] Store empty in MongoDB. Attempting auto-seeding…");
       await autoSeedPrecedentStore();
       precedentCount = await LegalPrecedent.countDocuments();
     }
 
     if (precedentCount === 0) {
-      console.warn("[PrecedentAgent] LegalPrecedent store remains empty after auto-seeding attempt.");
       return { status: "NOT_CONFIGURED", precedents: [] };
     }
   } catch (dbErr) {
@@ -123,7 +125,7 @@ async function runPrecedentSearch(intake, legalSources = [], jurisdiction = "Ind
     return { status: "FAILED", precedents: [] };
   }
 
-  // 2. Construct detailed search query
+  // 2. Build detailed query
   const queryText = buildDetailedPrecedentQuery(intake);
   console.log(`[PrecedentAgent] Search Query: "${queryText.slice(0, 140)}…"`);
 
@@ -136,52 +138,96 @@ async function runPrecedentSearch(intake, legalSources = [], jurisdiction = "Ind
     return { status: "FAILED", precedents: [] };
   }
 
-  // 4. Perform 3-pass vector similarity search
-  let matches = [];
+  // 4. Perform 3-pass search with pass metadata tagging
+  const taggedMatches = [];
+  const seenIds = new Set();
+
   try {
-    // Pass 1: Filter by jurisdiction + legalDomain
-    matches = await searchPrecedents(queryVec, {
+    // Pass 1: Jurisdiction + Legal Domain
+    const pass1 = await searchPrecedents(queryVec, {
       jurisdiction,
       legalDomain: intake.legalDomain,
       limit: 3,
       minScore: 0.12,
     });
 
-    // Pass 2: Fall back to jurisdiction only if domain match returned 0 results
-    if (matches.length === 0) {
-      console.log("[PrecedentAgent] Pass 1 returned 0 — searching jurisdiction only…");
-      matches = await searchPrecedents(queryVec, {
-        jurisdiction,
-        limit: 3,
-        minScore: 0.08,
+    for (const item of pass1) {
+      seenIds.add(item.precedentId || item.caseName);
+      taggedMatches.push({
+        ...item,
+        retrievalPass: "PASS_1_EXACT",
+        confidenceLevel: item.relevanceScore >= 0.18 ? "HIGH" : "MEDIUM",
       });
     }
 
-    // Pass 3: Global fallback if still 0 matches
-    if (matches.length === 0) {
-      console.log("[PrecedentAgent] Pass 2 returned 0 — doing global fallback search…");
-      matches = await searchPrecedents(queryVec, {
+    // Pass 2: Jurisdiction only (Require minScore >= 0.35 for generic/ambiguous queries)
+    if (taggedMatches.length === 0) {
+      const isGenericDomain = !intake.legalDomain || intake.legalDomain.toLowerCase().includes("civil") || intake.legalDomain.toLowerCase().includes("general");
+      const pass2Score = isGenericDomain ? 0.35 : 0.08;
+
+      const pass2 = await searchPrecedents(queryVec, {
+        jurisdiction,
         limit: 3,
-        minScore: 0.05,
+        minScore: pass2Score,
       });
+
+      for (const item of pass2) {
+        const id = item.precedentId || item.caseName;
+        if (!seenIds.has(id)) {
+          seenIds.add(id);
+          taggedMatches.push({
+            ...item,
+            retrievalPass: "PASS_2_JURISDICTION",
+            confidenceLevel: "MEDIUM",
+          });
+        }
+      }
+    }
+
+    // Pass 3: Global fallback (Quality gate: require minScore >= 0.35 for generic/ambiguous queries)
+    if (taggedMatches.length === 0) {
+      const isGenericDomain = !intake.legalDomain || intake.legalDomain.toLowerCase().includes("civil") || intake.legalDomain.toLowerCase().includes("general");
+      const requiredScore = isGenericDomain ? 0.35 : 0.12;
+
+      const pass3 = await searchPrecedents(queryVec, {
+        limit: 3,
+        minScore: requiredScore,
+      });
+
+      for (const item of pass3) {
+        const id = item.precedentId || item.caseName;
+        if (!seenIds.has(id)) {
+          seenIds.add(id);
+          taggedMatches.push({
+            ...item,
+            retrievalPass: "PASS_3_GLOBAL",
+            confidenceLevel: "LOW",
+          });
+        }
+      }
     }
   } catch (searchErr) {
     console.error("[PrecedentAgent] Vector similarity search failed:", searchErr.message);
     return { status: "FAILED", precedents: [] };
   }
 
-  // 5. Shape output & status
-  const formattedPrecedents = matches.map((item) => ({
+  // 5. Shape final precedent results
+  const formattedPrecedents = taggedMatches.map((item) => ({
     caseName:             item.caseName || "",
     court:                item.court || "",
     dateOrYear:           item.dateOrYear || "",
+    citation:             item.citation || "",
+    source:               item.source || "Supreme Court Reports / Indian Kanoon",
     summary:              item.summary || item.keyHoldings || "",
     relevanceExplanation: generateRelevanceExplanation(item, intake),
     sourceUrl:            item.sourceUrl || "",
+    relevanceScore:       item.relevanceScore,
+    retrievalPass:        item.retrievalPass,
+    confidenceLevel:      item.confidenceLevel,
   }));
 
   const status = formattedPrecedents.length > 0 ? "SUCCESS" : "NO_RESULTS";
-  console.log(`[PrecedentAgent] Search completed with status="${status}" (${formattedPrecedents.length} precedent(s) found).`);
+  console.log(`[PrecedentAgent] Search completed with status="${status}" (${formattedPrecedents.length} precedent(s) returned).`);
 
   return {
     status,

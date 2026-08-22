@@ -462,11 +462,17 @@ export default function LegalAdvisory() {
                                                     <h4 className="text-xs font-bold text-foreground">
                                                         {precedent.caseName}
                                                     </h4>
-                                                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                                                        <span className="font-medium text-foreground/80">{precedent.court}</span>
-                                                        <span>•</span>
-                                                        <span>{precedent.dateOrYear}</span>
-                                                    </div>
+                                                     <div className="flex items-center gap-2 text-[10px] text-muted-foreground flex-wrap">
+                                                         <span className="font-medium text-foreground/80">{precedent.court}</span>
+                                                         <span>•</span>
+                                                         <span>{precedent.dateOrYear}</span>
+                                                         {precedent.citation && (
+                                                             <>
+                                                                 <span>•</span>
+                                                                 <span className="font-mono text-primary/80 bg-primary/5 px-1 rounded">{precedent.citation}</span>
+                                                             </>
+                                                         )}
+                                                     </div>
                                                 </div>
                                                 {precedent.sourceUrl && (
                                                     <a

@@ -765,15 +765,22 @@ export interface RetrievedSource {
     sourceUrl?: string;
     legalDomain: string;
     relevanceScore: number;
+    retrievalPass?: string;
+    confidenceLevel?: string;
 }
 
 export interface LegalPrecedent {
     caseName: string;
     court: string;
     dateOrYear: string;
+    citation?: string;
+    source?: string;
     summary: string;
     relevanceExplanation: string;
     sourceUrl?: string;
+    relevanceScore?: number;
+    retrievalPass?: string;
+    confidenceLevel?: string;
 }
 
 export interface LegalAdvisoryResult {

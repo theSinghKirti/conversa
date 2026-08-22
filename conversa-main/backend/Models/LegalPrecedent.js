@@ -29,6 +29,16 @@ const LegalPrecedentSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    citation: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    source: {
+      type: String,
+      trim: true,
+      default: "Supreme Court Reports / Indian Kanoon",
+    },
     legalDomain: {
       type: String,
       required: true,
