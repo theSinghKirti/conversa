@@ -1,6 +1,8 @@
+const fs = require("fs");
+const path = require("path");
 const LegalPrecedent = require("../../Models/LegalPrecedent.js");
 const { embedText } = require("./rag/embeddingService.js");
-const { searchPrecedents } = require("./precedentSearchTool.js");
+const { searchPrecedents, upsertPrecedents } = require("./precedentSearchTool.js");
 
 /**
  * precedentAgent.js
@@ -11,19 +13,44 @@ const { searchPrecedents } = require("./precedentSearchTool.js");
  * STATUS CODES:
  *   - "SUCCESS": Store searched and 1+ relevant court precedents returned
  *   - "NO_RESULTS": Search executed successfully, store is populated, but query yielded 0 matches
- *   - "NOT_CONFIGURED": Precedent collection is empty (0 documents in DB)
+ *   - "NOT_CONFIGURED": Precedent collection is empty and seed files unavailable
  *   - "FAILED": Embedding API error or DB aggregation error
- *
- * OUTPUT:
- *   {
- *     status: "SUCCESS" | "NO_RESULTS" | "NOT_CONFIGURED" | "FAILED",
- *     precedents: Array<{ caseName, court, dateOrYear, summary, relevanceExplanation, sourceUrl }>
- *   }
  */
 
 /**
+ * Auto-seeds the precedent store from local seed files if MongoDB collection is empty.
+ */
+async function autoSeedPrecedentStore() {
+  const dataDir = path.join(__dirname, "../../data/legal-precedents/india");
+  if (!fs.existsSync(dataDir)) return;
+
+  const files = fs.readdirSync(dataDir).filter((f) => f.endsWith(".json"));
+  console.log(`[PrecedentAgent] Auto-seeding LegalPrecedent store from ${files.length} seed dataset(s)…`);
+
+  for (const file of files) {
+    const filePath = path.join(dataDir, file);
+    try {
+      const precedents = JSON.parse(fs.readFileSync(filePath, "utf8"));
+      const recordsToUpsert = [];
+
+      for (const item of precedents) {
+        const textToEmbed = `${item.caseName} ${item.court} ${item.legalDomain} ${item.summary} ${item.keyHoldings}`;
+        const vector = await embedText(textToEmbed);
+        recordsToUpsert.push({ ...item, vector });
+      }
+
+      await upsertPrecedents(recordsToUpsert);
+    } catch (err) {
+      console.warn(`[PrecedentAgent] Auto-seed warning for ${file}:`, err.message);
+    }
+  }
+
+  const count = await LegalPrecedent.countDocuments();
+  console.log(`[PrecedentAgent] Auto-seeding complete. Total precedents in DB: ${count}.`);
+}
+
+/**
  * Constructs a detailed search query using all structured case intake fields.
- * Incorporates case type, legal domain, factual summary, entities, and keywords.
  *
  * @param {object} intake
  * @returns {string}
@@ -78,11 +105,17 @@ function generateRelevanceExplanation(precedent, intake) {
 async function runPrecedentSearch(intake, legalSources = [], jurisdiction = "India") {
   console.log("[PrecedentAgent] Stage 3 — Starting Precedent Search…");
 
-  // 1. Check DB population for LegalPrecedent
+  // 1. Check DB population for LegalPrecedent, auto-seed if empty
   try {
-    const precedentCount = await LegalPrecedent.countDocuments();
+    let precedentCount = await LegalPrecedent.countDocuments();
     if (precedentCount === 0) {
-      console.warn("[PrecedentAgent] LegalPrecedent collection is empty in MongoDB (0 docs).");
+      console.warn("[PrecedentAgent] LegalPrecedent collection is empty in MongoDB (0 docs). Attempting auto-seeding…");
+      await autoSeedPrecedentStore();
+      precedentCount = await LegalPrecedent.countDocuments();
+    }
+
+    if (precedentCount === 0) {
+      console.warn("[PrecedentAgent] LegalPrecedent store remains empty after auto-seeding attempt.");
       return { status: "NOT_CONFIGURED", precedents: [] };
     }
   } catch (dbErr) {
@@ -103,7 +136,7 @@ async function runPrecedentSearch(intake, legalSources = [], jurisdiction = "Ind
     return { status: "FAILED", precedents: [] };
   }
 
-  // 4. Perform 2-pass vector similarity search
+  // 4. Perform 3-pass vector similarity search
   let matches = [];
   try {
     // Pass 1: Filter by jurisdiction + legalDomain
@@ -111,7 +144,7 @@ async function runPrecedentSearch(intake, legalSources = [], jurisdiction = "Ind
       jurisdiction,
       legalDomain: intake.legalDomain,
       limit: 3,
-      minScore: 0.30,
+      minScore: 0.25,
     });
 
     // Pass 2: Fall back to jurisdiction only if domain match returned 0 results

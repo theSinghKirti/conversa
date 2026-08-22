@@ -1,6 +1,9 @@
+const fs = require("fs");
+const path = require("path");
 const LegalKnowledgeChunk = require("../../../Models/LegalKnowledgeChunk.js");
 const { embedText } = require("./embeddingService.js");
-const { similaritySearch } = require("./vectorStore.js");
+const { similaritySearch, upsertChunks } = require("./vectorStore.js");
+const { processDocument } = require("./documentProcessor.js");
 
 /**
  * legalRetriever.js
@@ -11,18 +14,45 @@ const { similaritySearch } = require("./vectorStore.js");
  * STATUS CODES:
  *   - "SUCCESS": Vector store searched and 1+ relevant knowledge chunks returned
  *   - "NO_RESULTS": Search completed successfully, store is populated, but query yielded 0 matches above threshold
- *   - "NOT_CONFIGURED": Vector store collection is empty (0 documents in DB)
+ *   - "NOT_CONFIGURED": Vector store collection is empty and seed files unavailable
  *   - "FAILED": Embedding API error or DB aggregation failure
- *
- * OUTPUT:
- *   {
- *     status: "SUCCESS" | "NO_RESULTS" | "NOT_CONFIGURED" | "FAILED",
- *     sources: Array<{ title, content, source, sourceUrl, legalDomain, relevanceScore }>
- *   }
  */
 
 const DEFAULT_LIMIT     = 5;
-const DEFAULT_MIN_SCORE = 0.30;
+const DEFAULT_MIN_SCORE = 0.25;
+
+/**
+ * Auto-seeds the vector store from local seed files if MongoDB collection is empty.
+ */
+async function autoSeedKnowledgeStore() {
+  const dataDir = path.join(__dirname, "../../../data/legal-knowledge/india");
+  if (!fs.existsSync(dataDir)) return;
+
+  const files = fs.readdirSync(dataDir).filter((f) => f.endsWith(".json"));
+  console.log(`[legalRetriever] Auto-seeding LegalKnowledgeChunk store from ${files.length} seed dataset(s)…`);
+
+  for (const file of files) {
+    const filePath = path.join(dataDir, file);
+    try {
+      const rawData = JSON.parse(fs.readFileSync(filePath, "utf8"));
+      const chunks = processDocument(rawData);
+      const chunksWithEmbeddings = [];
+
+      for (const chunk of chunks) {
+        const textToEmbed = `${chunk.title} ${chunk.legalDomain} ${chunk.content}`;
+        const vector = await embedText(textToEmbed);
+        chunksWithEmbeddings.push({ ...chunk, vector });
+      }
+
+      await upsertChunks(chunksWithEmbeddings);
+    } catch (err) {
+      console.warn(`[legalRetriever] Auto-seed warning for ${file}:`, err.message);
+    }
+  }
+
+  const count = await LegalKnowledgeChunk.countDocuments();
+  console.log(`[legalRetriever] Auto-seeding complete. Total chunks in DB: ${count}.`);
+}
 
 function buildRetrievalQuery(intake) {
   const { caseType, legalDomain, summary, keywords, jurisdiction } = intake;
@@ -64,11 +94,17 @@ async function retrieve(intake, opts = {}) {
   const { limit = DEFAULT_LIMIT, minScore = DEFAULT_MIN_SCORE } = opts;
   const { jurisdiction, legalDomain } = intake;
 
-  // 1. Check if vector store contains documents
+  // 1. Check if vector store contains documents, auto-seed if empty
   try {
-    const docCount = await LegalKnowledgeChunk.countDocuments();
+    let docCount = await LegalKnowledgeChunk.countDocuments();
     if (docCount === 0) {
-      console.warn("[legalRetriever] LegalKnowledgeChunk store is empty in MongoDB (0 docs).");
+      console.warn("[legalRetriever] LegalKnowledgeChunk store is empty in MongoDB (0 docs). Attempting auto-seeding…");
+      await autoSeedKnowledgeStore();
+      docCount = await LegalKnowledgeChunk.countDocuments();
+    }
+
+    if (docCount === 0) {
+      console.warn("[legalRetriever] LegalKnowledgeChunk store remains empty after auto-seeding attempt.");
       return { status: "NOT_CONFIGURED", sources: [] };
     }
   } catch (dbErr) {
@@ -105,7 +141,7 @@ async function retrieve(intake, opts = {}) {
       const pass2 = await similaritySearch(queryVec, {
         jurisdiction,
         limit,
-        minScore: Math.max(0.20, minScore - 0.10),
+        minScore: Math.max(0.20, minScore - 0.08),
       });
       // Deduplicate
       const existingIds = new Set(results.map((r) => r.chunkId));

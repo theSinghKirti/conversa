@@ -437,8 +437,8 @@ export default function LegalAdvisory() {
                                     {result.ragSearchStatus === "NOT_CONFIGURED"
                                         ? "Legal knowledge base is not currently configured."
                                         : result.ragSearchStatus === "FAILED"
-                                        ? "Legal knowledge search could not be completed."
-                                        : "No specific legal documents were retrieved from the knowledge base for this query."}
+                                        ? "Legal knowledge retrieval could not be completed."
+                                        : "No relevant legal information was found in the current knowledge base for this issue."}
                                 </p>
                             )}
                         </div>

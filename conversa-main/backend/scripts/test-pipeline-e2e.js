@@ -5,13 +5,12 @@ const dotenv = require("dotenv");
 dotenv.config({ path: path.join(__dirname, "../.env") });
 
 const { MONGO_URI, MONGO_DB_NAME } = process.env;
-
 const { generateAdvisory } = require("../services/legalAdvisory/legalAdvisoryService.js");
 
 const TEST_QUERIES = [
-  "My landlord is demanding more rent than agreed in my rental agreement.",
+  "My purse was stolen from my office.",
+  "My landlord is demanding more rent than agreed in our rental agreement.",
   "My employer terminated me without notice.",
-  "I was cheated in an online transaction and lost money.",
 ];
 
 async function runE2ETests() {
