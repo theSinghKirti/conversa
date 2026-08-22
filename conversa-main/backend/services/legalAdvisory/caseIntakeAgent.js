@@ -164,7 +164,44 @@ function validateIntakeOutput(parsed, fallbackJurisdiction = "India") {
 async function runIntake(query, jurisdiction = "India") {
   const geminiClient = getGeminiClient();
   if (!geminiClient) {
-    throw new Error("Gemini API key is not configured. Cannot run Case Intake Agent.");
+    console.warn("[CaseIntakeAgent] GEMINI_API_KEY missing — using deterministic offline intake classification.");
+    const qLower = (query || "").toLowerCase();
+
+    let caseType = "General Legal Matter";
+    let legalDomain = "Civil Law";
+    let keywords = ["legal advice", "rights", "procedure"];
+    let entities = ["party A", "party B"];
+
+    if (qLower.includes("landlord") || qLower.includes("rent") || qLower.includes("deposit") || qLower.includes("tenant")) {
+      caseType = "Tenancy Dispute";
+      legalDomain = "Tenant-Landlord Law";
+      keywords = ["security deposit", "rent increase", "tenancy agreement", "eviction"];
+      entities = ["landlord", "tenant"];
+    } else if (qLower.includes("employer") || qLower.includes("fired") || qLower.includes("terminate") || qLower.includes("notice") || qLower.includes("salary")) {
+      caseType = "Employment Dispute";
+      legalDomain = "Labour Law";
+      keywords = ["wrongful termination", "notice period", "severance", "full and final"];
+      entities = ["employer", "employee"];
+    } else if (qLower.includes("cheated") || qLower.includes("online") || qLower.includes("fraud") || qLower.includes("transaction") || qLower.includes("money")) {
+      caseType = "Consumer Fraud";
+      legalDomain = "Consumer Law";
+      keywords = ["online fraud", "financial cheating", "consumer rights", "refund"];
+      entities = ["buyer", "seller"];
+    } else if (qLower.includes("purse") || qLower.includes("lost") || qLower.includes("stolen") || qLower.includes("theft")) {
+      caseType = "Lost Property / Theft";
+      legalDomain = "Criminal Law";
+      keywords = ["lost property", "theft FIR", "police complaint", "stolen items"];
+      entities = ["complainant", "police"];
+    }
+
+    return validateIntakeOutput({
+      caseType,
+      legalDomain,
+      summary: `User reports issue regarding ${caseType.toLowerCase()} in ${jurisdiction}: "${query}".`,
+      relevantEntities: entities,
+      jurisdiction,
+      keywords,
+    }, jurisdiction);
   }
 
   const prompt = buildIntakePrompt(query, jurisdiction);

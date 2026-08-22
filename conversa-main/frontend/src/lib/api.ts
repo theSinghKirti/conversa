@@ -790,6 +790,8 @@ export interface LegalAdvisoryResult {
     keywords: string[];
     retrievedSources?: RetrievedSource[];
     precedents?: LegalPrecedent[];
+    ragSearchStatus?: "SUCCESS" | "NO_RESULTS" | "NOT_CONFIGURED" | "FAILED";
+    precedentSearchStatus?: "SUCCESS" | "NO_RESULTS" | "NOT_CONFIGURED" | "FAILED";
     issueIdentified?: string;
     generalLegalContext?: string;
     possibleNextSteps?: string[];

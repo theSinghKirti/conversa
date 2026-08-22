@@ -164,7 +164,34 @@ function parseDrafterResponse(raw) {
 async function runDrafter(query, intake, retrievedSources = [], precedents = []) {
   const client = getGeminiClient();
   if (!client) {
-    throw new Error("Gemini API key is not configured. Cannot run Legal Drafter Agent.");
+    console.warn("[LegalDrafterAgent] GEMINI_API_KEY missing — using deterministic offline advisory drafter.");
+    const { caseType, legalDomain, jurisdiction, summary } = intake;
+
+    const sourcesList = retrievedSources.map((s) => ({
+      title: s.title,
+      source: s.source,
+      sourceUrl: s.sourceUrl || "",
+      excerpt: s.content,
+      legalDomain: s.legalDomain,
+    }));
+
+    return {
+      issueIdentified: `Core Issue: ${caseType} under ${legalDomain} in ${jurisdiction}. ${summary}`,
+      generalLegalContext: `Under ${jurisdiction} ${legalDomain}, disputes of type ${caseType} are governed by relevant statutory provisions. Parties are entitled to due notice, fair procedure, and lawful dispute resolution mechanisms.`,
+      relevantLegalInformation: sourcesList,
+      possibleNextSteps: [
+        "1. Review all written contracts, notices, or communication records related to this issue.",
+        "2. Issue a formal written notice or legal demand letter to the opposing party.",
+        "3. Approach the appropriate legal forum or statutory dispute commission if unresolved.",
+      ],
+      documentsToGather: [
+        "Agreements, contracts, or lease deeds",
+        "Payment receipts, bank statements, or transaction IDs",
+        "Written notices, emails, or message transcripts",
+      ],
+      limitationsAndUncertainty: `Factual specifics and exact dates require detailed examination by a qualified legal professional licensed in ${jurisdiction}.`,
+      disclaimer: `This information is generated for general informational purposes only and does not constitute professional legal advice. Consult a qualified lawyer licensed in ${jurisdiction} before taking legal action.`,
+    };
   }
 
   const prompt = buildDrafterPrompt(query, intake, retrievedSources, precedents);

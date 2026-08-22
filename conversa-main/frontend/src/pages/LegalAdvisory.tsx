@@ -434,7 +434,11 @@ export default function LegalAdvisory() {
                                 </div>
                             ) : (
                                 <p className="text-xs text-muted-foreground italic">
-                                    No specific legal documents were retrieved from the knowledge base for this query. The advisory above is provided based on general legal principles.
+                                    {result.ragSearchStatus === "NOT_CONFIGURED"
+                                        ? "Legal knowledge base is not currently configured."
+                                        : result.ragSearchStatus === "FAILED"
+                                        ? "Legal knowledge search could not be completed."
+                                        : "No specific legal documents were retrieved from the knowledge base for this query."}
                                 </p>
                             )}
                         </div>
@@ -490,7 +494,11 @@ export default function LegalAdvisory() {
                                 </div>
                             ) : (
                                 <p className="text-xs text-muted-foreground italic">
-                                    No reliable related precedents were identified for this query.
+                                    {result.precedentSearchStatus === "NOT_CONFIGURED"
+                                        ? "Precedent search is not currently configured."
+                                        : result.precedentSearchStatus === "FAILED"
+                                        ? "Related precedent search could not be completed."
+                                        : "No reliable related precedents were found for this issue."}
                                 </p>
                             )}
                         </div>

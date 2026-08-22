@@ -79,6 +79,17 @@ const LegalAdvisorySchema = new mongoose.Schema(
       ],
       default: [],
     },
+    // Pipeline search status indicators
+    ragSearchStatus: {
+      type: String,
+      enum: ["SUCCESS", "NO_RESULTS", "NOT_CONFIGURED", "FAILED"],
+      default: "NOT_CONFIGURED",
+    },
+    precedentSearchStatus: {
+      type: String,
+      enum: ["SUCCESS", "NO_RESULTS", "NOT_CONFIGURED", "FAILED"],
+      default: "NOT_CONFIGURED",
+    },
     // Legal Drafter Agent structured output fields
     issueIdentified: {
       type: String,

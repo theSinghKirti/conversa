@@ -51,6 +51,8 @@ const analyzeQuery = async (req, res) => {
     advisoryRecord.keywords = result.keywords || [];
     advisoryRecord.retrievedSources = result.retrievedSources || [];
     advisoryRecord.precedents = result.precedents || [];
+    advisoryRecord.ragSearchStatus = result.ragSearchStatus || "NOT_CONFIGURED";
+    advisoryRecord.precedentSearchStatus = result.precedentSearchStatus || "NOT_CONFIGURED";
 
     // Structured Drafter Agent fields
     advisoryRecord.issueIdentified = result.issueIdentified || "";
@@ -61,6 +63,8 @@ const analyzeQuery = async (req, res) => {
     advisoryRecord.disclaimer = result.disclaimer || "";
 
     await advisoryRecord.save();
+
+    console.log(`[legal-advisory-controller] Saved advisory ${advisoryRecord._id} (Status: COMPLETED). RAG: "${advisoryRecord.ragSearchStatus}", Precedents: "${advisoryRecord.precedentSearchStatus}".`);
 
     return res.status(200).json({
       success: true,
@@ -78,6 +82,8 @@ const analyzeQuery = async (req, res) => {
         keywords: advisoryRecord.keywords,
         retrievedSources: advisoryRecord.retrievedSources,
         precedents: advisoryRecord.precedents,
+        ragSearchStatus: advisoryRecord.ragSearchStatus,
+        precedentSearchStatus: advisoryRecord.precedentSearchStatus,
         issueIdentified: advisoryRecord.issueIdentified,
         generalLegalContext: advisoryRecord.generalLegalContext,
         possibleNextSteps: advisoryRecord.possibleNextSteps,
