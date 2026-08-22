@@ -768,6 +768,8 @@ export interface LegalAdvisoryResult {
     legalDomain: string;
     caseSummary: string;
     advisoryResponse: string;
+    relevantEntities: string[];
+    keywords: string[];
     createdAt: string;
     updatedAt: string;
 }

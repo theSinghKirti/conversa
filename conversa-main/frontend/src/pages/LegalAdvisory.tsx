@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Scale, Loader2, AlertTriangle, ChevronDown } from "lucide-react"
 import { legalAdvisoryApi, type LegalAdvisoryResult } from "@/lib/api"
 import { toast } from "sonner"
@@ -104,6 +104,32 @@ function MetaBadge({ label, value }: { label: string; value: string }) {
     )
 }
 
+/* ─── Processing stage indicator ────────────────────────────────────────── */
+const STAGE_LABELS: Record<1 | 2, string> = {
+    1: "Understanding your legal issue…",
+    2: "Preparing your advisory…",
+}
+
+function ProcessingStageBar({ stage }: { stage: 1 | 2 }) {
+    return (
+        <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 px-4 py-2.5">
+            <div className="flex gap-1 shrink-0">
+                <span
+                    className={`h-1.5 w-8 rounded-full transition-colors duration-500 ${
+                        stage >= 1 ? "bg-primary" : "bg-muted-foreground/20"
+                    }`}
+                />
+                <span
+                    className={`h-1.5 w-8 rounded-full transition-colors duration-500 ${
+                        stage >= 2 ? "bg-primary" : "bg-muted-foreground/20"
+                    }`}
+                />
+            </div>
+            <span className="text-xs text-muted-foreground">{STAGE_LABELS[stage]}</span>
+        </div>
+    )
+}
+
 function ResultSkeleton() {
     return (
         <div className="space-y-4 mt-6">
@@ -124,8 +150,20 @@ export default function LegalAdvisory() {
     const [query, setQuery] = useState("")
     const [jurisdiction, setJurisdiction] = useState("India")
     const [isLoading, setIsLoading] = useState(false)
+    const [processingStage, setProcessingStage] = useState<1 | 2 | null>(null)
     const [result, setResult] = useState<LegalAdvisoryResult | null>(null)
     const [validationError, setValidationError] = useState("")
+
+    // Advance processing stage label during load
+    useEffect(() => {
+        if (!isLoading) {
+            setProcessingStage(null)
+            return
+        }
+        setProcessingStage(1)
+        const timer = setTimeout(() => setProcessingStage(2), 2500)
+        return () => clearTimeout(timer)
+    }, [isLoading])
 
     const charCount = query.length
     const isUnderMin = charCount > 0 && charCount < MIN_CHARS
@@ -272,24 +310,32 @@ export default function LegalAdvisory() {
                     </div>
 
                     {/* Submit */}
-                    <Button
-                        id="legal-advisory-submit"
-                        onClick={handleSubmit}
-                        disabled={isLoading || isOverMax}
-                        className="w-full sm:w-auto"
-                    >
-                        {isLoading ? (
-                            <>
-                                <Loader2 className="size-4 mr-2 animate-spin" />
-                                Analyzing your issue…
-                            </>
-                        ) : (
-                            <>
-                                <Scale className="size-4 mr-2" />
-                                Analyze My Issue
-                            </>
+                    <div className="flex flex-col gap-2">
+                        <Button
+                            id="legal-advisory-submit"
+                            onClick={handleSubmit}
+                            disabled={isLoading || isOverMax}
+                            className="w-full sm:w-auto"
+                        >
+                            {isLoading ? (
+                                <>
+                                    <Loader2 className="size-4 mr-2 animate-spin" />
+                                    {processingStage === 2
+                                        ? "Preparing your advisory…"
+                                        : "Understanding your issue…"}
+                                </>
+                            ) : (
+                                <>
+                                    <Scale className="size-4 mr-2" />
+                                    Analyze My Issue
+                                </>
+                            )}
+                        </Button>
+                        {/* Subtle processing stage bar — only visible while loading */}
+                        {isLoading && processingStage && (
+                            <ProcessingStageBar stage={processingStage} />
                         )}
-                    </Button>
+                    </div>
                 </div>
 
                 {/* ── Loading skeleton ──────────────────────────── */}

@@ -34,19 +34,28 @@ const analyzeQuery = async (req, res) => {
     return res.status(500).send("Internal Server Error");
   }
 
-  // Call the AI service
+  // Call the AI service (two-stage: intake → advisory)
   try {
-    const { caseType, legalDomain, caseSummary, advisoryResponse } = await generateAdvisory(
+    const {
+      caseType,
+      legalDomain,
+      caseSummary,
+      advisoryResponse,
+      relevantEntities,
+      keywords,
+    } = await generateAdvisory(
       query.trim(),
       jurisdiction.trim() || "India"
     );
 
-    // Update record with the result
+    // Update record with the full result
     advisoryRecord.status = "COMPLETED";
     advisoryRecord.caseType = caseType;
     advisoryRecord.legalDomain = legalDomain;
     advisoryRecord.caseSummary = caseSummary;
     advisoryRecord.advisoryResponse = advisoryResponse;
+    advisoryRecord.relevantEntities = relevantEntities || [];
+    advisoryRecord.keywords = keywords || [];
     await advisoryRecord.save();
 
     return res.status(200).json({
@@ -61,6 +70,8 @@ const analyzeQuery = async (req, res) => {
         legalDomain: advisoryRecord.legalDomain,
         caseSummary: advisoryRecord.caseSummary,
         advisoryResponse: advisoryRecord.advisoryResponse,
+        relevantEntities: advisoryRecord.relevantEntities,
+        keywords: advisoryRecord.keywords,
         createdAt: advisoryRecord.createdAt,
         updatedAt: advisoryRecord.updatedAt,
       },

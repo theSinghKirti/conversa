@@ -42,6 +42,15 @@ const LegalAdvisorySchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
+    // Case Intake Agent output — stored for future retrieval/RAG use
+    relevantEntities: {
+      type: [String],
+      default: [],
+    },
+    keywords: {
+      type: [String],
+      default: [],
+    },
   },
   {
     timestamps: true,
