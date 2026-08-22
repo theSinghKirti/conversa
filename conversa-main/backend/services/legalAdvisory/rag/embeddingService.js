@@ -22,8 +22,9 @@ const EMBEDDING_DIMS  = 768;
 
 let ai;
 const getClient = () => {
-  if (!GEMINI_API_KEY) return null;
-  if (!ai) ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+  const apiKey = process.env.GEMINI_API_KEY || GEMINI_API_KEY;
+  if (!apiKey) return null;
+  if (!ai) ai = new GoogleGenAI({ apiKey });
   return ai;
 };
 

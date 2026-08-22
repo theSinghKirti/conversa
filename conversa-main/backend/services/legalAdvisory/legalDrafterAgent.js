@@ -6,8 +6,9 @@ const { GEMINI_API_KEY, GEMINI_MODEL } = require("../../secrets.js");
  */
 let ai;
 const getGeminiClient = () => {
-  if (!GEMINI_API_KEY) return null;
-  if (!ai) ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+  const apiKey = process.env.GEMINI_API_KEY || GEMINI_API_KEY;
+  if (!apiKey) return null;
+  if (!ai) ai = new GoogleGenAI({ apiKey });
   return ai;
 };
 
@@ -124,16 +125,22 @@ Return ONLY the raw JSON object.`;
  * @returns {object}
  */
 function parseDrafterResponse(raw) {
-  const cleaned = raw
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```\s*$/, "")
-    .trim();
+  let cleaned = (raw || "").trim();
+  cleaned = cleaned.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    cleaned = jsonMatch[0].trim();
+  }
 
   try {
     return JSON.parse(cleaned);
   } catch (err) {
-    console.error("[legalDrafterAgent] Failed to parse JSON response:", cleaned.slice(0, 400));
-    throw new Error("Legal Drafter Agent produced invalid JSON output. Please try again.");
+    console.error("[LegalDrafterAgent] Failed to parse JSON response:", err.message);
+    if (process.env.NODE_ENV !== "production") {
+      console.error("[LegalDrafterAgent] Raw output:", raw);
+    }
+    throw new Error("Unable to process your legal advisory right now. Please try again.");
   }
 }
 
@@ -162,10 +169,13 @@ async function runDrafter(query, intake, retrievedSources = [], precedents = [])
 
   const prompt = buildDrafterPrompt(query, intake, retrievedSources, precedents);
 
+  console.log("[LegalDrafterAgent] Calling Gemini with responseMimeType: application/json...");
+
   const response = await client.models.generateContent({
     model: GEMINI_MODEL,
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     config: {
+      responseMimeType: "application/json",
       temperature: 0.3,
       maxOutputTokens: 2048,
     },
