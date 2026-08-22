@@ -82,6 +82,21 @@ function generateRelevanceExplanation(precedent, intake) {
   return `Landmark ${precedent.court} judgment (${precedent.dateOrYear})${citeStr} establishing binding legal principles for ${domain.toLowerCase()} disputes in ${precedent.jurisdiction || "India"}.`;
 }
 
+function isGenericOrNonLegalDomain(domain) {
+  if (!domain || typeof domain !== "string") return true;
+  const d = domain.toLowerCase().trim();
+  return (
+    d.includes("civil") ||
+    d.includes("general") ||
+    d.includes("not applicable") ||
+    d.includes("n/a") ||
+    d.includes("none") ||
+    d.includes("other") ||
+    d.includes("non-legal") ||
+    d.includes("information")
+  );
+}
+
 /**
  * Runs the Precedent Agent.
  *
@@ -141,29 +156,31 @@ async function runPrecedentSearch(intake, legalSources = [], jurisdiction = "Ind
   // 4. Perform 3-pass search with pass metadata tagging
   const taggedMatches = [];
   const seenIds = new Set();
+  const isGeneric = isGenericOrNonLegalDomain(intake.legalDomain);
 
   try {
     // Pass 1: Jurisdiction + Legal Domain
-    const pass1 = await searchPrecedents(queryVec, {
-      jurisdiction,
-      legalDomain: intake.legalDomain,
-      limit: 3,
-      minScore: 0.12,
-    });
-
-    for (const item of pass1) {
-      seenIds.add(item.precedentId || item.caseName);
-      taggedMatches.push({
-        ...item,
-        retrievalPass: "PASS_1_EXACT",
-        confidenceLevel: item.relevanceScore >= 0.18 ? "HIGH" : "MEDIUM",
+    if (!isGeneric) {
+      const pass1 = await searchPrecedents(queryVec, {
+        jurisdiction,
+        legalDomain: intake.legalDomain,
+        limit: 3,
+        minScore: 0.12,
       });
+
+      for (const item of pass1) {
+        seenIds.add(item.precedentId || item.caseName);
+        taggedMatches.push({
+          ...item,
+          retrievalPass: "PASS_1_EXACT",
+          confidenceLevel: item.relevanceScore >= 0.18 ? "HIGH" : "MEDIUM",
+        });
+      }
     }
 
-    // Pass 2: Jurisdiction only (Require minScore >= 0.35 for generic/ambiguous queries)
+    // Pass 2: Jurisdiction only (Require minScore >= 0.35 for generic/non-legal queries)
     if (taggedMatches.length === 0) {
-      const isGenericDomain = !intake.legalDomain || intake.legalDomain.toLowerCase().includes("civil") || intake.legalDomain.toLowerCase().includes("general");
-      const pass2Score = isGenericDomain ? 0.35 : 0.08;
+      const pass2Score = isGeneric ? 0.35 : 0.08;
 
       const pass2 = await searchPrecedents(queryVec, {
         jurisdiction,
@@ -186,8 +203,7 @@ async function runPrecedentSearch(intake, legalSources = [], jurisdiction = "Ind
 
     // Pass 3: Global fallback (Quality gate: require minScore >= 0.35 for generic/ambiguous queries)
     if (taggedMatches.length === 0) {
-      const isGenericDomain = !intake.legalDomain || intake.legalDomain.toLowerCase().includes("civil") || intake.legalDomain.toLowerCase().includes("general");
-      const requiredScore = isGenericDomain ? 0.35 : 0.12;
+      const requiredScore = isGeneric ? 0.35 : 0.12;
 
       const pass3 = await searchPrecedents(queryVec, {
         limit: 3,
