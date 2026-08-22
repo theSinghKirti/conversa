@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { Bot, ContactRound, Inbox, LogOut, MessagesSquare, Settings, Star, Shield } from "lucide-react"
+import { Bot, ContactRound, Inbox, LogOut, MessagesSquare, Scale, Settings, Star, Shield } from "lucide-react"
 import {
     Sidebar,
     SidebarContent,
@@ -46,6 +46,12 @@ const NAV_ITEMS = [
         href: "/user/inbox",
         icon: Inbox,
         tooltip: "Community Inbox",
+    },
+    {
+        label: "Legal Advisory",
+        href: "/user/legal-advisory",
+        icon: Scale,
+        tooltip: "Legal Advisory",
     },
 ]
 

@@ -50,6 +50,7 @@ app.use("/admin/inbox", require("./Routes/admin-inbox-routes.js"));
 app.use("/admin", require("./Routes/admin-routes.js"));
 app.use("/activation", require("./Routes/activation-routes.js"));
 app.use("/directory", require("./Routes/directory-routes.js"));
+app.use("/api/legal-advisory", require("./Routes/legal-advisory-routes.js"));
 
 // Server setup
 const server = http.createServer(app);

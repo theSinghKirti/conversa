@@ -24,6 +24,7 @@ import Directory from "./pages/Directory";
 import MemberProfile from "./pages/MemberProfile";
 import CommunityInbox from "./pages/CommunityInbox";
 import CommunityPostDetail from "./pages/CommunityPostDetail";
+import LegalAdvisory from "./pages/LegalAdvisory";
 import AdminInbox from "./pages/admin/AdminInbox";
 import AdminInboxPostDetail from "./pages/admin/AdminInboxPostDetail";
 import AdminDashboardOverview from "./pages/admin/AdminDashboardOverview";
@@ -65,6 +66,7 @@ export function App() {
           <Route path="/user/inbox" element={<CommunityInbox />} />
           <Route path="/user/inbox/:postId" element={<CommunityPostDetail />} />
           <Route path="/user/starred" element={<StarredMessages />} />
+          <Route path="/user/legal-advisory" element={<LegalAdvisory />} />
           <Route element={<ConversationLayout />}>
             <Route path="/user/conversations" element={<Conversations />} />
             <Route path="/user/conversations/:id" element={<ConversationDetail />} />

@@ -756,4 +756,35 @@ export const activationApi = {
         }>(res)),
 };
 
+/* ─── legal advisory ─────────────────────────────────────────────────────── */
+
+export interface LegalAdvisoryResult {
+    _id: string;
+    userId: string;
+    query: string;
+    jurisdiction: string;
+    status: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
+    caseType: string;
+    legalDomain: string;
+    caseSummary: string;
+    advisoryResponse: string;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface LegalAdvisoryResponse {
+    success: boolean;
+    advisory: LegalAdvisoryResult;
+}
+
+export const legalAdvisoryApi = {
+    analyze: (query: string, jurisdiction: string = "India") =>
+        fetch(`${API_BASE}/api/legal-advisory/analyze`, {
+            method: "POST",
+            headers: headers(),
+            body: JSON.stringify({ query, jurisdiction }),
+        }).then((res) => handleResponse<LegalAdvisoryResponse>(res)),
+};
+
 export { API_BASE };
+
