@@ -145,6 +145,63 @@ function parseDrafterResponse(raw) {
 }
 
 /**
+ * Deterministic fallback legal advisory drafter.
+ */
+function generateFallbackDrafter(query, intake, retrievedSources = [], precedents = []) {
+  const { caseType, legalDomain, jurisdiction, summary } = intake;
+
+  const sourcesList = retrievedSources.map((s) => ({
+    title: s.title,
+    source: s.source,
+    sourceUrl: s.sourceUrl || "",
+    excerpt: s.content,
+    legalDomain: s.legalDomain,
+  }));
+
+  const steps = [];
+  const docs = [];
+
+  if (legalDomain === "Criminal Law") {
+    steps.push("1. Immediately visit the nearest police station having territorial jurisdiction to report the theft/loss.");
+    steps.push("2. File a First Information Report (FIR) under relevant sections of the Bharatiya Nyaya Sanhita (BNS) / IPC.");
+    steps.push("3. Request and obtain a stamped copy of the FIR or Lost Article Report acknowledgement.");
+    docs.push("Proof of identity (Aadhaar, Passport, or Voter ID)");
+    docs.push("List of stolen contents with approximate values or serial numbers");
+    docs.push("Any available CCTV footage, witness details, or location logs");
+  } else if (legalDomain === "Tenant-Landlord Law") {
+    steps.push("1. Review the terms of the registered tenancy/lease agreement regarding rent clauses and notice periods.");
+    steps.push("2. Issue a formal written communication/notice detailing the agreed terms and disputed claims.");
+    steps.push("3. Approach the Rent Authority or Rent Court under the applicable Tenancy/Rent Control Act if unresolved.");
+    docs.push("Signed Tenancy / Lease Agreement");
+    docs.push("Rent receipts, bank transfer records, and security deposit acknowledgement");
+    docs.push("Written communications, notices, or email/SMS transcripts");
+  } else if (legalDomain === "Labour Law") {
+    steps.push("1. Review employment contract, appointment letter, and company exit/termination policies.");
+    steps.push("2. Send a formal written representation or legal notice requesting full and final settlement and notice pay.");
+    steps.push("3. File a complaint before the Labour Commissioner or Labour Court under the Industrial Disputes Act / Shops Act.");
+    docs.push("Appointment letter, employment contract, and salary slips");
+    docs.push("Termination letter / email or notice of cessation");
+    docs.push("Bank statements showing salary credits and provident fund statements");
+  } else {
+    steps.push("1. Collate all written agreements, receipts, and communication logs related to this matter.");
+    steps.push("2. Issue a formal notice stating facts, demands, and a reasonable compliance window.");
+    steps.push("3. Consult a qualified legal practitioner in your jurisdiction for tailored guidance.");
+    docs.push("Contracts, invoices, receipts, or relevant records");
+    docs.push("Identity documents and communication logs");
+  }
+
+  return {
+    issueIdentified: `Core Issue: ${caseType} under ${legalDomain} in ${jurisdiction}. ${summary}`,
+    generalLegalContext: `Under ${jurisdiction} ${legalDomain}, matters involving ${caseType.toLowerCase()} are governed by established legal statutes. Parties are entitled to statutory remedies, due process, and legal dispute resolution mechanisms.`,
+    relevantLegalInformation: sourcesList,
+    possibleNextSteps: steps,
+    documentsToGather: docs,
+    limitationsAndUncertainty: `Specific legal nuances, limitation periods, and jurisdiction thresholds require verification with a qualified legal professional licensed in ${jurisdiction}.`,
+    disclaimer: `This information is generated for general informational purposes only and does not constitute professional legal advice. Consult a qualified lawyer licensed in ${jurisdiction} before taking legal action.`,
+  };
+}
+
+/**
  * Runs the Legal Response / Drafter Agent.
  *
  * @param {string} query
@@ -165,66 +222,44 @@ async function runDrafter(query, intake, retrievedSources = [], precedents = [])
   const client = getGeminiClient();
   if (!client) {
     console.warn("[LegalDrafterAgent] GEMINI_API_KEY missing — using deterministic offline advisory drafter.");
-    const { caseType, legalDomain, jurisdiction, summary } = intake;
-
-    const sourcesList = retrievedSources.map((s) => ({
-      title: s.title,
-      source: s.source,
-      sourceUrl: s.sourceUrl || "",
-      excerpt: s.content,
-      legalDomain: s.legalDomain,
-    }));
-
-    return {
-      issueIdentified: `Core Issue: ${caseType} under ${legalDomain} in ${jurisdiction}. ${summary}`,
-      generalLegalContext: `Under ${jurisdiction} ${legalDomain}, disputes of type ${caseType} are governed by relevant statutory provisions. Parties are entitled to due notice, fair procedure, and lawful dispute resolution mechanisms.`,
-      relevantLegalInformation: sourcesList,
-      possibleNextSteps: [
-        "1. Review all written contracts, notices, or communication records related to this issue.",
-        "2. Issue a formal written notice or legal demand letter to the opposing party.",
-        "3. Approach the appropriate legal forum or statutory dispute commission if unresolved.",
-      ],
-      documentsToGather: [
-        "Agreements, contracts, or lease deeds",
-        "Payment receipts, bank statements, or transaction IDs",
-        "Written notices, emails, or message transcripts",
-      ],
-      limitationsAndUncertainty: `Factual specifics and exact dates require detailed examination by a qualified legal professional licensed in ${jurisdiction}.`,
-      disclaimer: `This information is generated for general informational purposes only and does not constitute professional legal advice. Consult a qualified lawyer licensed in ${jurisdiction} before taking legal action.`,
-    };
+    return generateFallbackDrafter(query, intake, retrievedSources, precedents);
   }
 
   const prompt = buildDrafterPrompt(query, intake, retrievedSources, precedents);
 
-  console.log("[LegalDrafterAgent] Calling Gemini with responseMimeType: application/json...");
+  try {
+    console.log("[LegalDrafterAgent] Calling Gemini with responseMimeType: application/json...");
+    const response = await client.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: {
+        responseMimeType: "application/json",
+        temperature: 0.3,
+        maxOutputTokens: 2048,
+      },
+    });
 
-  const response = await client.models.generateContent({
-    model: GEMINI_MODEL,
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    config: {
-      responseMimeType: "application/json",
-      temperature: 0.3,
-      maxOutputTokens: 2048,
-    },
-  });
+    const rawText = response?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    if (!rawText) {
+      console.warn("[LegalDrafterAgent] Empty response from Gemini — using fallback drafter.");
+      return generateFallbackDrafter(query, intake, retrievedSources, precedents);
+    }
 
-  const rawText = response?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-  if (!rawText) {
-    throw new Error("Legal Drafter Agent received an empty response from Gemini.");
+    const parsed = parseDrafterResponse(rawText);
+
+    return {
+      issueIdentified: typeof parsed.issueIdentified === "string" ? parsed.issueIdentified.trim() : "",
+      generalLegalContext: typeof parsed.generalLegalContext === "string" ? parsed.generalLegalContext.trim() : "",
+      relevantLegalInformation: Array.isArray(parsed.relevantLegalInformation) ? parsed.relevantLegalInformation : [],
+      possibleNextSteps: Array.isArray(parsed.possibleNextSteps) ? parsed.possibleNextSteps.filter(Boolean).map(String) : [],
+      documentsToGather: Array.isArray(parsed.documentsToGather) ? parsed.documentsToGather.filter(Boolean).map(String) : [],
+      limitationsAndUncertainty: typeof parsed.limitationsAndUncertainty === "string" ? parsed.limitationsAndUncertainty.trim() : "",
+      disclaimer: typeof parsed.disclaimer === "string" ? parsed.disclaimer.trim() : "This information is generated by AI for general informational purposes only and does not constitute professional legal advice.",
+    };
+  } catch (err) {
+    console.warn("[LegalDrafterAgent] Gemini API unavailable or quota exceeded:", err.message, "— using fallback drafter.");
+    return generateFallbackDrafter(query, intake, retrievedSources, precedents);
   }
-
-  const parsed = parseDrafterResponse(rawText);
-
-  // Normalize shape with safe fallbacks
-  return {
-    issueIdentified: typeof parsed.issueIdentified === "string" ? parsed.issueIdentified.trim() : "",
-    generalLegalContext: typeof parsed.generalLegalContext === "string" ? parsed.generalLegalContext.trim() : "",
-    relevantLegalInformation: Array.isArray(parsed.relevantLegalInformation) ? parsed.relevantLegalInformation : [],
-    possibleNextSteps: Array.isArray(parsed.possibleNextSteps) ? parsed.possibleNextSteps.filter(Boolean).map(String) : [],
-    documentsToGather: Array.isArray(parsed.documentsToGather) ? parsed.documentsToGather.filter(Boolean).map(String) : [],
-    limitationsAndUncertainty: typeof parsed.limitationsAndUncertainty === "string" ? parsed.limitationsAndUncertainty.trim() : "",
-    disclaimer: typeof parsed.disclaimer === "string" ? parsed.disclaimer.trim() : "This information is generated by AI for general informational purposes only and does not constitute professional legal advice.",
-  };
 }
 
-module.exports = { runDrafter };
+module.exports = { runDrafter, generateFallbackDrafter };

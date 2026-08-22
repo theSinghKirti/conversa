@@ -85,7 +85,6 @@ function parseIntakeResponse(raw) {
       console.error("[CaseIntakeAgent] Raw Gemini output received:", raw);
       console.error("[CaseIntakeAgent] Cleaned string attempted:", cleaned);
     }
-    // Return user-friendly error string without exposing internal parser details
     throw new Error("Unable to process your legal issue right now. Please try again.");
   }
 }
@@ -145,6 +144,49 @@ function validateIntakeOutput(parsed, fallbackJurisdiction = "India") {
 }
 
 /**
+ * Deterministic offline intake classifier.
+ */
+function generateFallbackIntake(query, jurisdiction = "India") {
+  const qLower = (query || "").toLowerCase();
+
+  let caseType = "General Legal Matter";
+  let legalDomain = "Civil Law";
+  let keywords = ["legal advice", "rights", "procedure"];
+  let entities = ["party A", "party B"];
+
+  if (qLower.includes("landlord") || qLower.includes("rent") || qLower.includes("deposit") || qLower.includes("tenant")) {
+    caseType = "Tenancy Dispute";
+    legalDomain = "Tenant-Landlord Law";
+    keywords = ["security deposit", "rent increase", "tenancy agreement", "eviction"];
+    entities = ["landlord", "tenant"];
+  } else if (qLower.includes("employer") || qLower.includes("fired") || qLower.includes("terminate") || qLower.includes("notice") || qLower.includes("salary")) {
+    caseType = "Employment Dispute";
+    legalDomain = "Labour Law";
+    keywords = ["wrongful termination", "notice period", "severance", "full and final"];
+    entities = ["employer", "employee"];
+  } else if (qLower.includes("cheated") || qLower.includes("online") || qLower.includes("fraud") || qLower.includes("transaction") || qLower.includes("money")) {
+    caseType = "Consumer Fraud";
+    legalDomain = "Consumer Law";
+    keywords = ["online fraud", "financial cheating", "consumer rights", "refund"];
+    entities = ["buyer", "seller"];
+  } else if (qLower.includes("purse") || qLower.includes("lost") || qLower.includes("stolen") || qLower.includes("theft")) {
+    caseType = "Lost Property / Theft";
+    legalDomain = "Criminal Law";
+    keywords = ["lost property", "theft FIR", "police complaint", "stolen items"];
+    entities = ["complainant", "police"];
+  }
+
+  return validateIntakeOutput({
+    caseType,
+    legalDomain,
+    summary: `User reports issue regarding ${caseType.toLowerCase()} in ${jurisdiction}: "${query}".`,
+    relevantEntities: entities,
+    jurisdiction,
+    keywords,
+  }, jurisdiction);
+}
+
+/**
  * Runs the Case Intake Agent.
  *
  * Responsibility: understand + classify the legal issue only.
@@ -165,67 +207,35 @@ async function runIntake(query, jurisdiction = "India") {
   const geminiClient = getGeminiClient();
   if (!geminiClient) {
     console.warn("[CaseIntakeAgent] GEMINI_API_KEY missing — using deterministic offline intake classification.");
-    const qLower = (query || "").toLowerCase();
-
-    let caseType = "General Legal Matter";
-    let legalDomain = "Civil Law";
-    let keywords = ["legal advice", "rights", "procedure"];
-    let entities = ["party A", "party B"];
-
-    if (qLower.includes("landlord") || qLower.includes("rent") || qLower.includes("deposit") || qLower.includes("tenant")) {
-      caseType = "Tenancy Dispute";
-      legalDomain = "Tenant-Landlord Law";
-      keywords = ["security deposit", "rent increase", "tenancy agreement", "eviction"];
-      entities = ["landlord", "tenant"];
-    } else if (qLower.includes("employer") || qLower.includes("fired") || qLower.includes("terminate") || qLower.includes("notice") || qLower.includes("salary")) {
-      caseType = "Employment Dispute";
-      legalDomain = "Labour Law";
-      keywords = ["wrongful termination", "notice period", "severance", "full and final"];
-      entities = ["employer", "employee"];
-    } else if (qLower.includes("cheated") || qLower.includes("online") || qLower.includes("fraud") || qLower.includes("transaction") || qLower.includes("money")) {
-      caseType = "Consumer Fraud";
-      legalDomain = "Consumer Law";
-      keywords = ["online fraud", "financial cheating", "consumer rights", "refund"];
-      entities = ["buyer", "seller"];
-    } else if (qLower.includes("purse") || qLower.includes("lost") || qLower.includes("stolen") || qLower.includes("theft")) {
-      caseType = "Lost Property / Theft";
-      legalDomain = "Criminal Law";
-      keywords = ["lost property", "theft FIR", "police complaint", "stolen items"];
-      entities = ["complainant", "police"];
-    }
-
-    return validateIntakeOutput({
-      caseType,
-      legalDomain,
-      summary: `User reports issue regarding ${caseType.toLowerCase()} in ${jurisdiction}: "${query}".`,
-      relevantEntities: entities,
-      jurisdiction,
-      keywords,
-    }, jurisdiction);
+    return generateFallbackIntake(query, jurisdiction);
   }
 
   const prompt = buildIntakePrompt(query, jurisdiction);
 
-  console.log("[CaseIntakeAgent] Calling Gemini with responseMimeType: application/json...");
+  try {
+    console.log("[CaseIntakeAgent] Calling Gemini with responseMimeType: application/json...");
+    const response = await geminiClient.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: {
+        responseMimeType: "application/json",
+        temperature: 0.2, // low — deterministic classification
+        maxOutputTokens: 1024,
+      },
+    });
 
-  const response = await geminiClient.models.generateContent({
-    model: GEMINI_MODEL,
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    config: {
-      responseMimeType: "application/json",
-      temperature: 0.2, // low — deterministic classification
-      maxOutputTokens: 1024,
-    },
-  });
+    const rawText = response?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    if (!rawText) {
+      console.warn("[CaseIntakeAgent] Empty response from Gemini — using fallback classification.");
+      return generateFallbackIntake(query, jurisdiction);
+    }
 
-  const rawText = response?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-  if (!rawText) {
-    console.error("[CaseIntakeAgent] Received empty response from Gemini.");
-    throw new Error("Unable to process your legal issue right now. Please try again.");
+    const parsed = parseIntakeResponse(rawText);
+    return validateIntakeOutput(parsed, jurisdiction);
+  } catch (err) {
+    console.warn("[CaseIntakeAgent] Gemini API unavailable or quota exceeded:", err.message, "— using fallback classification.");
+    return generateFallbackIntake(query, jurisdiction);
   }
-
-  const parsed = parseIntakeResponse(rawText);
-  return validateIntakeOutput(parsed, jurisdiction);
 }
 
-module.exports = { runIntake, parseIntakeResponse, validateIntakeOutput };
+module.exports = { runIntake, parseIntakeResponse, validateIntakeOutput, generateFallbackIntake };
