@@ -65,6 +65,35 @@ const LegalAdvisorySchema = new mongoose.Schema(
       ],
       default: [],
     },
+    // Legal Drafter Agent structured output fields
+    issueIdentified: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    generalLegalContext: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    possibleNextSteps: {
+      type: [String],
+      default: [],
+    },
+    documentsToGather: {
+      type: [String],
+      default: [],
+    },
+    limitationsAndUncertainty: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    disclaimer: {
+      type: String,
+      trim: true,
+      default: "",
+    },
   },
   {
     timestamps: true,

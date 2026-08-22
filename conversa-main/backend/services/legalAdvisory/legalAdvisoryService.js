@@ -1,137 +1,65 @@
-const { GoogleGenAI } = require("@google/genai");
-const { GEMINI_API_KEY, GEMINI_MODEL } = require("../../secrets.js");
 const { runIntake } = require("./caseIntakeAgent.js");
 const { retrieve } = require("./rag/legalRetriever.js");
+const { runDrafter } = require("./legalDrafterAgent.js");
 
 /**
- * Lazy-initialized Gemini client — same pattern used in message-controller.js.
- * Returns null if GEMINI_API_KEY is not configured.
- */
-let ai;
-const getGeminiClient = () => {
-  if (!GEMINI_API_KEY) return null;
-  if (!ai) ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
-  return ai;
-};
-
-/**
- * Builds the Stage 3 advisory prompt using enriched intake data and retrieved
- * legal knowledge chunks from the RAG layer.
+ * Formats structured Drafter output into a human-readable text block for
+ * backward compatibility with any consumer reading advisoryResponse.
  *
- * @param {string} query
- * @param {object} intake — output from caseIntakeAgent.runIntake()
- * @param {Array<object>} retrievedSources — chunks from legalRetriever.retrieve()
+ * @param {object} drafterOutput
  * @returns {string}
  */
-function buildAdvisoryPrompt(query, intake, retrievedSources = []) {
+function formatAdvisoryText(drafterOutput) {
   const {
-    caseType,
-    legalDomain,
-    summary,
-    relevantEntities,
-    jurisdiction,
-    keywords,
-  } = intake;
+    issueIdentified,
+    generalLegalContext,
+    possibleNextSteps,
+    documentsToGather,
+    limitationsAndUncertainty,
+    disclaimer,
+  } = drafterOutput;
 
-  const entitiesStr = relevantEntities.length ? relevantEntities.join(", ") : "N/A";
-  const keywordsStr = keywords.length ? keywords.join(", ") : "N/A";
+  const stepsStr = possibleNextSteps.length
+    ? possibleNextSteps.join("\n")
+    : "1. Consult a qualified legal professional for case-specific guidance.";
 
-  // Format retrieved legal sources for prompt injection
-  let sourcesContextBlock = "";
-  if (retrievedSources.length > 0) {
-    const formattedSources = retrievedSources
-      .map(
-        (src, idx) =>
-          `SOURCE [${idx + 1}]: "${src.title}" (${src.source})\nURL: ${
-            src.sourceUrl || "N/A"
-          }\nRELEVANT EXCERPT:\n${src.content}`
-      )
-      .join("\n\n---\n\n");
+  const docsStr = documentsToGather.length
+    ? documentsToGather.join("\n")
+    : "• Any contracts, communications, or receipts relevant to your issue.";
 
-    sourcesContextBlock = `\n--- RETRIEVED LEGAL KNOWLEDGE SOURCES ---\nThe following verified legal excerpts were retrieved from the knowledge base for this case. You MUST use these sources where applicable:\n\n${formattedSources}\n--- END RETRIEVED SOURCES ---\n`;
-  } else {
-    sourcesContextBlock = `\n--- RETRIEVED LEGAL KNOWLEDGE SOURCES ---\nNo specific legal documents were retrieved from the knowledge base for this query.\n--- END RETRIEVED SOURCES ---\n`;
-  }
-
-  return `You are a knowledgeable legal information assistant. A case intake and legal knowledge search have been completed for this user's situation.
-
---- INTAKE SUMMARY ---
-Original Query: """${query}"""
-Jurisdiction: ${jurisdiction}
-Case Type: ${caseType}
-Legal Domain: ${legalDomain}
-Situation Summary: ${summary}
-Relevant Entities: ${entitiesStr}
-Key Legal Terms: ${keywordsStr}
---- END INTAKE ---
-${sourcesContextBlock}
-CRITICAL INSTRUCTIONS FOR CITATIONS & SOURCE ACCURACY:
-1. Do NOT invent, fabricate, or hallucinate any legal citations, section numbers, or source URLs that are not provided in the RETRIEVED LEGAL KNOWLEDGE SOURCES section above.
-2. If retrieved sources ARE provided above, explicitly cite them in your response when referring to specific statutory rules, rights, or procedures.
-3. Clearly distinguish between:
-   - Specific information directly supported by the retrieved sources above
-   - General legal principles or background explanation
-   - Any areas of uncertainty or facts needing further clarification from a lawyer
-4. If no retrieved sources were provided, base your response on general legal principles applicable in ${jurisdiction} for a ${caseType} under ${legalDomain}, and explicitly note that user should verify local rules with a lawyer.
-
-Return ONLY a raw JSON object (no markdown, no code fences) with exactly these keys:
-
-{
-  "caseType": "${caseType}",
-  "legalDomain": "${legalDomain}",
-  "caseSummary": "<2–3 sentence neutral summary of the situation>",
-  "advisoryResponse": "<structured advisory with exactly these five labelled sections, each separated by a blank line:
-
-ISSUE IDENTIFIED:
-[Describe the core legal issue in plain language, referencing the classified case type and entities]
+  return `ISSUE IDENTIFIED:
+${issueIdentified}
 
 GENERAL LEGAL CONTEXT:
-[Explain the relevant laws, statutes, rights, or legal principles that apply in ${jurisdiction} for a ${caseType} under ${legalDomain}. Attribute specific rules to retrieved sources where available.]
+${generalLegalContext}
 
 POSSIBLE NEXT STEPS:
-[List 3–5 numbered actionable steps the user can take]
+${stepsStr}
 
 DOCUMENTS/INFORMATION THE USER SHOULD GATHER:
-[Bulleted list of evidence and documents relevant to a ${caseType}]
+${docsStr}
+
+LIMITATIONS AND UNCERTAINTY:
+${limitationsAndUncertainty || "Consult a lawyer licensed in your jurisdiction to evaluate specific nuances."}
 
 IMPORTANT DISCLAIMER:
-This information is generated by AI for general informational purposes only and does not constitute professional legal advice. Laws and procedures vary and change over time. You should consult a qualified lawyer licensed in ${jurisdiction} before taking any legal action.>"
-}
-
-Return ONLY the JSON object. Do not add any text, explanation, or markdown outside it.`;
+${disclaimer}`;
 }
 
 /**
- * Parses Gemini's JSON response, stripping any accidental markdown fences.
- *
- * @param {string} raw
- * @returns {object}
- */
-function parseAdvisoryResponse(raw) {
-  const cleaned = raw
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```\s*$/, "")
-    .trim();
-
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    console.error("[legalAdvisoryService] Failed to parse advisory JSON:", cleaned.slice(0, 300));
-    throw new Error("Failed to parse structured advisory response from AI. Please try again.");
-  }
-}
-
-/**
- * Three-stage Legal Advisory orchestrator.
+ * Three-stage Legal Advisory Orchestrator.
  *
  * Stage 1 — Case Intake Agent (caseIntakeAgent.js):
- *   Classifies the issue, extracts entities & keywords, writes a neutral summary.
+ *   Understands, classifies, extracts entities & keywords, writes a neutral summary.
+ *   MUST succeed, or throws an error.
  *
  * Stage 2 — Legal RAG Retriever (rag/legalRetriever.js):
- *   Performs semantic vector search over legal knowledge base for relevant chunks.
+ *   Retrieves top semantic vector matches from the legal knowledge store.
+ *   Fails gracefully to [] if retrieval encounters issues.
  *
- * Stage 3 — Advisory Generator (this file):
- *   Combines query, intake data, and retrieved legal sources to generate a structured advisory.
+ * Stage 3 — Legal Response / Drafter Agent (legalDrafterAgent.js):
+ *   Generates the structured advisory prioritizing retrieved sources.
+ *   MUST succeed, or throws an error.
  *
  * @param {string} query
  * @param {string} jurisdiction
@@ -142,18 +70,26 @@ function parseAdvisoryResponse(raw) {
  *   advisoryResponse: string,
  *   relevantEntities: string[],
  *   keywords: string[],
- *   retrievedSources: Array<object>
+ *   retrievedSources: Array<object>,
+ *   issueIdentified: string,
+ *   generalLegalContext: string,
+ *   possibleNextSteps: string[],
+ *   documentsToGather: string[],
+ *   limitationsAndUncertainty: string,
+ *   disclaimer: string
  * }>}
  */
 async function generateAdvisory(query, jurisdiction = "India") {
-  const geminiClient = getGeminiClient();
-  if (!geminiClient) {
-    throw new Error("Gemini API key is not configured. Cannot generate legal advisory.");
+  // ── Stage 1: Case Intake Agent ───────────────────────────────────────────
+  console.log("[legalAdvisoryService] Stage 1 — Running Case Intake Agent…");
+  let intake;
+  try {
+    intake = await runIntake(query, jurisdiction);
+  } catch (intakeErr) {
+    console.error("[legalAdvisoryService] Stage 1 Intake Failed:", intakeErr.message);
+    throw new Error(`Case Intake failed: ${intakeErr.message}`);
   }
 
-  // ── Stage 1: Case Intake ──────────────────────────────────────────────────
-  console.log("[legalAdvisoryService] Stage 1 — Running Case Intake Agent…");
-  const intake = await runIntake(query, jurisdiction);
   console.log("[legalAdvisoryService] Intake complete:", {
     caseType: intake.caseType,
     legalDomain: intake.legalDomain,
@@ -166,40 +102,41 @@ async function generateAdvisory(query, jurisdiction = "India") {
   try {
     retrievedSources = await retrieve(intake, { limit: 4, minScore: 0.5 });
   } catch (ragErr) {
-    console.error("[legalAdvisoryService] RAG Retrieval error (proceeding without sources):", ragErr.message);
+    console.warn("[legalAdvisoryService] Stage 2 RAG Retrieval warning (proceeding with empty sources):", ragErr.message);
+    retrievedSources = [];
   }
-  console.log(`[legalAdvisoryService] Retrieved ${retrievedSources.length} legal knowledge chunk(s).`);
+  console.log(`[legalAdvisoryService] Stage 2 complete — ${retrievedSources.length} source(s) retrieved.`);
 
-  // ── Stage 3: Advisory Generation (with intake + RAG context) ─────────────
-  console.log("[legalAdvisoryService] Stage 3 — Generating advisory using intake + RAG context…");
-  const advisoryPrompt = buildAdvisoryPrompt(query, intake, retrievedSources);
-
-  const response = await geminiClient.models.generateContent({
-    model: GEMINI_MODEL,
-    contents: [{ role: "user", parts: [{ text: advisoryPrompt }] }],
-    config: {
-      temperature: 0.4,
-      maxOutputTokens: 2048,
-    },
-  });
-
-  const rawText = response?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-  if (!rawText) {
-    throw new Error("Advisory generator received an empty response from Gemini.");
+  // ── Stage 3: Legal Response / Drafter Agent ───────────────────────────────
+  console.log("[legalAdvisoryService] Stage 3 — Running Legal Drafter Agent…");
+  let drafterResult;
+  try {
+    drafterResult = await runDrafter(query, intake, retrievedSources);
+  } catch (drafterErr) {
+    console.error("[legalAdvisoryService] Stage 3 Drafter Failed:", drafterErr.message);
+    throw new Error(`Legal Drafter Agent failed: ${drafterErr.message}`);
   }
 
-  const parsed = parseAdvisoryResponse(rawText);
+  console.log("[legalAdvisoryService] Stage 3 complete — advisory successfully generated.");
 
+  // Build combined output object
   return {
-    caseType: parsed.caseType || intake.caseType,
-    legalDomain: parsed.legalDomain || intake.legalDomain,
-    caseSummary: parsed.caseSummary || intake.summary,
-    advisoryResponse: parsed.advisoryResponse || "",
+    caseType: intake.caseType,
+    legalDomain: intake.legalDomain,
+    caseSummary: intake.summary,
+    advisoryResponse: formatAdvisoryText(drafterResult),
     relevantEntities: intake.relevantEntities,
     keywords: intake.keywords,
     retrievedSources,
+
+    // Structured Drafter Agent fields
+    issueIdentified: drafterResult.issueIdentified,
+    generalLegalContext: drafterResult.generalLegalContext,
+    possibleNextSteps: drafterResult.possibleNextSteps,
+    documentsToGather: drafterResult.documentsToGather,
+    limitationsAndUncertainty: drafterResult.limitationsAndUncertainty,
+    disclaimer: drafterResult.disclaimer,
   };
 }
 
 module.exports = { generateAdvisory };
-

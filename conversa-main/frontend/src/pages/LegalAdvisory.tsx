@@ -106,8 +106,8 @@ function MetaBadge({ label, value }: { label: string; value: string }) {
 
 /* ─── Processing stage indicator ────────────────────────────────────────── */
 const STAGE_LABELS: Record<1 | 2 | 3, string> = {
-    1: "Understanding your legal issue…",
-    2: "Searching legal knowledge base…",
+    1: "Understanding your issue…",
+    2: "Searching relevant legal information…",
     3: "Preparing your advisory…",
 }
 
@@ -375,38 +375,17 @@ export default function LegalAdvisory() {
                         {/* Case summary */}
                         <SectionCard title="Case Summary" content={result.caseSummary} accent />
 
-                        {/* Advisory sections */}
-                        {sections.issueIdentified && (
-                            <SectionCard title="Issue Identified" content={sections.issueIdentified} />
-                        )}
-                        {sections.generalLegalContext && (
-                            <SectionCard
-                                title="General Legal Context"
-                                content={sections.generalLegalContext}
-                            />
-                        )}
-                        {sections.possibleNextSteps && (
-                            <SectionCard
-                                title="Possible Next Steps"
-                                content={sections.possibleNextSteps}
-                            />
-                        )}
-                        {sections.documentsToGather && (
-                            <SectionCard
-                                title="Documents / Information to Gather"
-                                content={sections.documentsToGather}
-                            />
-                        )}
+                        {/* Issue Identified */}
+                        <SectionCard
+                            title="Issue Identified"
+                            content={result.issueIdentified || sections.issueIdentified}
+                        />
 
-                        {/* If sections couldn't be parsed, show raw response */}
-                        {!sections.issueIdentified &&
-                            !sections.generalLegalContext &&
-                            result.advisoryResponse && (
-                                <SectionCard
-                                    title="Advisory Response"
-                                    content={result.advisoryResponse}
-                                />
-                            )}
+                        {/* General Legal Context */}
+                        <SectionCard
+                            title="General Legal Context"
+                            content={result.generalLegalContext || sections.generalLegalContext}
+                        />
 
                         {/* ── Relevant Legal Information (RAG Sources) ─────── */}
                         <div className="rounded-xl border border-border bg-card p-4 space-y-3">
@@ -459,6 +438,69 @@ export default function LegalAdvisory() {
                                 </p>
                             )}
                         </div>
+
+                        {/* Possible Next Steps */}
+                        <div className="rounded-xl border border-border bg-card p-4 space-y-2">
+                            <h3 className="text-sm font-semibold text-foreground">Possible Next Steps</h3>
+                            {result.possibleNextSteps && result.possibleNextSteps.length > 0 ? (
+                                <ul className="text-sm text-muted-foreground space-y-1.5 pl-1">
+                                    {result.possibleNextSteps.map((step, idx) => (
+                                        <li key={idx} className="leading-relaxed">
+                                            {step.startsWith(`${idx + 1}.`) || step.startsWith("•")
+                                                ? step
+                                                : `${idx + 1}. ${step}`}
+                                        </li>
+                                    ))}
+                                </ul>
+                            ) : (
+                                <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
+                                    {sections.possibleNextSteps || "—"}
+                                </p>
+                            )}
+                        </div>
+
+                        {/* Documents / Information to Gather */}
+                        <div className="rounded-xl border border-border bg-card p-4 space-y-2">
+                            <h3 className="text-sm font-semibold text-foreground">Documents / Information to Gather</h3>
+                            {result.documentsToGather && result.documentsToGather.length > 0 ? (
+                                <ul className="text-sm text-muted-foreground space-y-1 pl-1">
+                                    {result.documentsToGather.map((doc, idx) => (
+                                        <li key={idx} className="leading-relaxed flex items-start gap-2">
+                                            <span className="text-primary font-bold">•</span>
+                                            <span>{doc.replace(/^[•\-]\s*/, "")}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            ) : (
+                                <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
+                                    {sections.documentsToGather || "—"}
+                                </p>
+                            )}
+                        </div>
+
+                        {/* Important Limitations & Uncertainty */}
+                        {result.limitationsAndUncertainty && (
+                            <div className="rounded-xl border border-amber-500/30 bg-amber-50/40 dark:bg-amber-950/20 p-4 space-y-1.5">
+                                <div className="flex items-center gap-2 text-amber-900 dark:text-amber-300 font-semibold text-xs uppercase tracking-wider">
+                                    <AlertTriangle className="size-3.5 text-amber-500 shrink-0" />
+                                    <span>Important Limitations & Uncertainty</span>
+                                </div>
+                                <p className="text-xs text-amber-800 dark:text-amber-300/90 leading-relaxed">
+                                    {result.limitationsAndUncertainty}
+                                </p>
+                            </div>
+                        )}
+
+                        {/* Fallback raw response if structured fields are missing */}
+                        {!result.issueIdentified &&
+                            !sections.issueIdentified &&
+                            !sections.generalLegalContext &&
+                            result.advisoryResponse && (
+                                <SectionCard
+                                    title="Advisory Response"
+                                    content={result.advisoryResponse}
+                                />
+                            )}
 
                         {/* Disclaimer (bottom, prominent) */}
                         <div className="rounded-xl border border-border bg-muted/40 px-4 py-3">

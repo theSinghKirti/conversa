@@ -780,6 +780,12 @@ export interface LegalAdvisoryResult {
     relevantEntities: string[];
     keywords: string[];
     retrievedSources?: RetrievedSource[];
+    issueIdentified?: string;
+    generalLegalContext?: string;
+    possibleNextSteps?: string[];
+    documentsToGather?: string[];
+    limitationsAndUncertainty?: string;
+    disclaimer?: string;
     createdAt: string;
     updatedAt: string;
 }

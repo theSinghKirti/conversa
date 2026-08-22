@@ -34,30 +34,31 @@ const analyzeQuery = async (req, res) => {
     return res.status(500).send("Internal Server Error");
   }
 
-  // Call the AI service (two-stage: intake → advisory)
+  // Call the AI pipeline (3-stage: intake → RAG retrieval → Drafter Agent)
   try {
-    const {
-      caseType,
-      legalDomain,
-      caseSummary,
-      advisoryResponse,
-      relevantEntities,
-      keywords,
-      retrievedSources,
-    } = await generateAdvisory(
+    const result = await generateAdvisory(
       query.trim(),
       jurisdiction.trim() || "India"
     );
 
-    // Update record with the full result
+    // Update record with full pipeline result
     advisoryRecord.status = "COMPLETED";
-    advisoryRecord.caseType = caseType;
-    advisoryRecord.legalDomain = legalDomain;
-    advisoryRecord.caseSummary = caseSummary;
-    advisoryRecord.advisoryResponse = advisoryResponse;
-    advisoryRecord.relevantEntities = relevantEntities || [];
-    advisoryRecord.keywords = keywords || [];
-    advisoryRecord.retrievedSources = retrievedSources || [];
+    advisoryRecord.caseType = result.caseType || "";
+    advisoryRecord.legalDomain = result.legalDomain || "";
+    advisoryRecord.caseSummary = result.caseSummary || "";
+    advisoryRecord.advisoryResponse = result.advisoryResponse || "";
+    advisoryRecord.relevantEntities = result.relevantEntities || [];
+    advisoryRecord.keywords = result.keywords || [];
+    advisoryRecord.retrievedSources = result.retrievedSources || [];
+
+    // Structured Drafter Agent fields
+    advisoryRecord.issueIdentified = result.issueIdentified || "";
+    advisoryRecord.generalLegalContext = result.generalLegalContext || "";
+    advisoryRecord.possibleNextSteps = result.possibleNextSteps || [];
+    advisoryRecord.documentsToGather = result.documentsToGather || [];
+    advisoryRecord.limitationsAndUncertainty = result.limitationsAndUncertainty || "";
+    advisoryRecord.disclaimer = result.disclaimer || "";
+
     await advisoryRecord.save();
 
     return res.status(200).json({
@@ -75,12 +76,18 @@ const analyzeQuery = async (req, res) => {
         relevantEntities: advisoryRecord.relevantEntities,
         keywords: advisoryRecord.keywords,
         retrievedSources: advisoryRecord.retrievedSources,
+        issueIdentified: advisoryRecord.issueIdentified,
+        generalLegalContext: advisoryRecord.generalLegalContext,
+        possibleNextSteps: advisoryRecord.possibleNextSteps,
+        documentsToGather: advisoryRecord.documentsToGather,
+        limitationsAndUncertainty: advisoryRecord.limitationsAndUncertainty,
+        disclaimer: advisoryRecord.disclaimer,
         createdAt: advisoryRecord.createdAt,
         updatedAt: advisoryRecord.updatedAt,
       },
     });
   } catch (error) {
-    console.error("[legal-advisory-controller] AI generation failed:", error.message);
+    console.error("[legal-advisory-controller] AI pipeline generation failed:", error.message);
 
     // Update record status to FAILED
     try {
