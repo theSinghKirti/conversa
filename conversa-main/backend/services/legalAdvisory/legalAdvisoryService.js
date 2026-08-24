@@ -2,6 +2,7 @@ const { runIntake } = require("./caseIntakeAgent.js");
 const { retrieve } = require("./rag/legalRetriever.js");
 const { runPrecedentSearch } = require("./precedentAgent.js");
 const { runDrafter } = require("./legalDrafterAgent.js");
+const { rerankEvidence } = require("./evidenceReranker.js");
 
 /**
  * Formats structured Drafter output into a human-readable text block for
@@ -45,6 +46,10 @@ ${limitationsAndUncertainty || "Consult a lawyer licensed in your jurisdiction t
 
 IMPORTANT DISCLAIMER:
 ${disclaimer}`;
+}
+
+function stripRankingMetadata(items = []) {
+  return items.map(({ finalScore, rankingReasons, ...rest }) => rest);
 }
 
 /**
@@ -107,27 +112,53 @@ async function generateAdvisory(query, jurisdiction = "India") {
   // ── Stage 2 & 3: Parallel Retrieval (Legal Knowledge RAG + Precedent Search) ───
   console.log("[Orchestrator] Stage 2 & 3 — Running Parallel Retrieval (Legal Knowledge RAG + Precedents)…");
 
-  const [ragResult, precedentResult] = await Promise.all([
-    retrieve(intake, { limit: 4, minScore: 0.25 }).catch((ragErr) => {
+  const parallelStart = Date.now();
+  const legalRetrievalStart = Date.now();
+  console.log(`[Legal Retrieval] START timestamp ${legalRetrievalStart}`);
+  const legalRetrievalPromise = retrieve(intake, { limit: 4, minScore: 0.25 })
+    .catch((ragErr) => {
       console.error("[Orchestrator] Stage 2 RAG Exception:", ragErr.message);
       return { status: "FAILED", sources: [] };
-    }),
-    runPrecedentSearch(intake, [], jurisdiction).catch((precedentErr) => {
+    })
+    .finally(() => {
+      const legalRetrievalEnd = Date.now();
+      console.log(`[Legal Retrieval] END timestamp ${legalRetrievalEnd} duration ${legalRetrievalEnd - legalRetrievalStart}ms`);
+    });
+
+  const precedentRetrievalStart = Date.now();
+  console.log(`[Precedent Retrieval] START timestamp ${precedentRetrievalStart}`);
+  const precedentRetrievalPromise = runPrecedentSearch(intake, [], jurisdiction)
+    .catch((precedentErr) => {
       console.error("[Orchestrator] Stage 3 Precedent Exception:", precedentErr.message);
       return { status: "FAILED", precedents: [] };
-    }),
+    })
+    .finally(() => {
+      const precedentRetrievalEnd = Date.now();
+      console.log(`[Precedent Retrieval] END timestamp ${precedentRetrievalEnd} duration ${precedentRetrievalEnd - precedentRetrievalStart}ms`);
+    });
+
+  const [ragResult, precedentResult] = await Promise.all([
+    legalRetrievalPromise,
+    precedentRetrievalPromise,
   ]);
+
+  const parallelEnd = Date.now();
+  console.log(`[Parallel Retrieval] TOTAL duration ${parallelEnd - parallelStart}ms`);
 
   console.log(
     `[Orchestrator] Parallel Retrieval Complete — RAG Status: "${ragResult.status}" (${ragResult.sources.length} sources), ` +
     `Precedent Status: "${precedentResult.status}" (${precedentResult.precedents.length} precedents).`
   );
 
+  const rerankedEvidence = rerankEvidence({ intake, ragResult, precedentResult });
+  const rankedLegalSources = rerankedEvidence.legalSources;
+  const rankedPrecedents = rerankedEvidence.precedents;
+
   // ── Stage 4: Legal Response / Drafter Agent ───────────────────────────────
   console.log("[Orchestrator] Stage 4 — Starting Legal Drafter Agent…");
   let drafterResult;
   try {
-    drafterResult = await runDrafter(query, intake, ragResult.sources, precedentResult.precedents);
+    drafterResult = await runDrafter(query, intake, rankedLegalSources, rankedPrecedents);
   } catch (drafterErr) {
     console.error("[Orchestrator] Stage 4 Drafter Failed:", drafterErr.message);
     throw new Error(`Legal Drafter Agent failed: ${drafterErr.message}`);
@@ -144,10 +175,10 @@ async function generateAdvisory(query, jurisdiction = "India") {
     keywords: intake.keywords,
 
     // RAG and Precedent payload & status codes
-    retrievedSources: ragResult.sources,
-    precedents: precedentResult.precedents,
-    ragSearchStatus: ragResult.status,
-    precedentSearchStatus: precedentResult.status,
+    retrievedSources: stripRankingMetadata(rankedLegalSources),
+    precedents: stripRankingMetadata(rankedPrecedents),
+    ragSearchStatus: rerankedEvidence.retrievalStatus.legal,
+    precedentSearchStatus: rerankedEvidence.retrievalStatus.precedents,
 
     // Structured Drafter Agent fields
     issueIdentified: drafterResult.issueIdentified,
