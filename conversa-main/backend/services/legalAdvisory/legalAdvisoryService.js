@@ -104,28 +104,24 @@ async function generateAdvisory(query, jurisdiction = "India") {
     keywordsCount: intake.keywords.length,
   });
 
-  // ── Stage 2: Legal Knowledge RAG Retrieval ──────────────────────────────
-  console.log("[Orchestrator] Stage 2 — Starting Legal Knowledge RAG Retrieval…");
-  let ragResult = { status: "FAILED", sources: [] };
-  try {
-    ragResult = await retrieve(intake, { limit: 4, minScore: 0.25 });
-  } catch (ragErr) {
-    console.error("[Orchestrator] Stage 2 RAG Exception:", ragErr.message);
-    ragResult = { status: "FAILED", sources: [] };
-  }
-  console.log(`[Orchestrator] Stage 2 Complete — RAG Status: "${ragResult.status}", Sources Found: ${ragResult.sources.length}`);
+  // ── Stage 2 & 3: Parallel Retrieval (Legal Knowledge RAG + Precedent Search) ───
+  console.log("[Orchestrator] Stage 2 & 3 — Running Parallel Retrieval (Legal Knowledge RAG + Precedents)…");
 
-  // ── Stage 3: Legal Precedent Search ──────────────────────────────────────
-  // Note: Precedent search runs independently regardless of RAG result count
-  console.log("[Orchestrator] Stage 3 — Starting Precedent Search…");
-  let precedentResult = { status: "FAILED", precedents: [] };
-  try {
-    precedentResult = await runPrecedentSearch(intake, ragResult.sources, jurisdiction);
-  } catch (precedentErr) {
-    console.error("[Orchestrator] Stage 3 Precedent Exception:", precedentErr.message);
-    precedentResult = { status: "FAILED", precedents: [] };
-  }
-  console.log(`[Orchestrator] Stage 3 Complete — Precedent Status: "${precedentResult.status}", Precedents Found: ${precedentResult.precedents.length}`);
+  const [ragResult, precedentResult] = await Promise.all([
+    retrieve(intake, { limit: 4, minScore: 0.25 }).catch((ragErr) => {
+      console.error("[Orchestrator] Stage 2 RAG Exception:", ragErr.message);
+      return { status: "FAILED", sources: [] };
+    }),
+    runPrecedentSearch(intake, [], jurisdiction).catch((precedentErr) => {
+      console.error("[Orchestrator] Stage 3 Precedent Exception:", precedentErr.message);
+      return { status: "FAILED", precedents: [] };
+    }),
+  ]);
+
+  console.log(
+    `[Orchestrator] Parallel Retrieval Complete — RAG Status: "${ragResult.status}" (${ragResult.sources.length} sources), ` +
+    `Precedent Status: "${precedentResult.status}" (${precedentResult.precedents.length} precedents).`
+  );
 
   // ── Stage 4: Legal Response / Drafter Agent ───────────────────────────────
   console.log("[Orchestrator] Stage 4 — Starting Legal Drafter Agent…");
