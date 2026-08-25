@@ -1,5 +1,6 @@
 const { GoogleGenAI } = require("@google/genai");
-const { GEMINI_API_KEY, GEMINI_MODEL } = require("../../secrets.js");
+const secrets = require("../../secrets.js");
+const { GEMINI_API_KEY, GEMINI_MODEL } = secrets;
 
 /**
  * Lazy-initialized Gemini client — same singleton pattern used across the app.
@@ -204,38 +205,72 @@ function generateFallbackIntake(query, jurisdiction = "India") {
  * }>}
  */
 async function runIntake(query, jurisdiction = "India") {
-  const geminiClient = getGeminiClient();
-  if (!geminiClient) {
-    console.warn("[CaseIntakeAgent] GEMINI_API_KEY missing — using deterministic offline intake classification.");
-    return generateFallbackIntake(query, jurisdiction);
-  }
-
   const prompt = buildIntakePrompt(query, jurisdiction);
 
-  try {
-    console.log("[CaseIntakeAgent] Calling Gemini with responseMimeType: application/json...");
-    const response = await geminiClient.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      config: {
-        responseMimeType: "application/json",
-        temperature: 0.2, // low — deterministic classification
-        maxOutputTokens: 1024,
-      },
-    });
+  // 1. Try Groq if configured
+  const groqKey = process.env.GROQ_API_KEY || secrets.GROQ_API_KEY;
+  if (groqKey && typeof groqKey === "string" && groqKey.trim().length > 0) {
+    try {
+      console.log("[CaseIntakeAgent] Calling Groq with response_format: json_object...");
+      const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${groqKey.trim()}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: process.env.GROQ_MODEL || secrets.GROQ_MODEL || "llama-3.3-70b-versatile",
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.2,
+          response_format: { type: "json_object" },
+          max_tokens: 1024,
+        }),
+      });
 
-    const rawText = response?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-    if (!rawText) {
-      console.warn("[CaseIntakeAgent] Empty response from Gemini — using fallback classification.");
-      return generateFallbackIntake(query, jurisdiction);
+      if (groqResponse.ok) {
+        const data = await groqResponse.json();
+        const rawText = data?.choices?.[0]?.message?.content ?? "";
+        if (rawText) {
+          const parsed = parseIntakeResponse(rawText);
+          return validateIntakeOutput(parsed, jurisdiction);
+        }
+      } else {
+        console.warn(`[CaseIntakeAgent] Groq returned status ${groqResponse.status}`);
+      }
+    } catch (groqErr) {
+      console.warn("[CaseIntakeAgent] Groq API call failed:", groqErr.message);
     }
-
-    const parsed = parseIntakeResponse(rawText);
-    return validateIntakeOutput(parsed, jurisdiction);
-  } catch (err) {
-    console.warn("[CaseIntakeAgent] Gemini API unavailable or quota exceeded:", err.message, "— using fallback classification.");
-    return generateFallbackIntake(query, jurisdiction);
   }
+
+  // 2. Try Gemini if configured
+  const geminiClient = getGeminiClient();
+  if (geminiClient) {
+    try {
+      console.log("[CaseIntakeAgent] Calling Gemini with responseMimeType: application/json...");
+      const response = await geminiClient.models.generateContent({
+        model: GEMINI_MODEL,
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        config: {
+          responseMimeType: "application/json",
+          temperature: 0.2, // low — deterministic classification
+          maxOutputTokens: 1024,
+        },
+      });
+
+      const rawText = response?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+      if (rawText) {
+        const parsed = parseIntakeResponse(rawText);
+        return validateIntakeOutput(parsed, jurisdiction);
+      }
+      console.warn("[CaseIntakeAgent] Empty response from Gemini.");
+    } catch (err) {
+      console.warn("[CaseIntakeAgent] Gemini API unavailable or quota exceeded:", err.message);
+    }
+  }
+
+  // 3. Fallback to offline deterministic intake
+  console.warn("[CaseIntakeAgent] AI providers unavailable — using deterministic offline intake classification.");
+  return generateFallbackIntake(query, jurisdiction);
 }
 
 module.exports = { runIntake, parseIntakeResponse, validateIntakeOutput, generateFallbackIntake };

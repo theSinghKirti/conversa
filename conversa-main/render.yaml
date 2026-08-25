@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: conversa-backend
+    runtime: node
+    rootDir: conversa-main/backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5500
+      - key: MONGO_URI
+        sync: false
+      - key: MONGO_DB_NAME
+        value: conversa
+      - key: JWT_SECRET
+        generateValue: true
+      - key: FRONTEND_URL
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3-flash-preview
+      - key: HUGGINGFACE_API_KEY
+        sync: false
+      - key: HUGGINGFACE_EMBEDDING_MODEL
+        value: BAAI/bge-m3
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile

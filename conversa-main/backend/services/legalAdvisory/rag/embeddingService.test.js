@@ -7,14 +7,18 @@ const secrets = require("../../../secrets.js");
 jest.mock("@google/genai");
 
 describe("embeddingService", () => {
-  const originalEnvKey = process.env.GEMINI_API_KEY;
-  const originalSecretKey = secrets.GEMINI_API_KEY;
+  const originalEnvGeminiKey = process.env.GEMINI_API_KEY;
+  const originalEnvHfKey = process.env.HUGGINGFACE_API_KEY;
+  const originalSecretGeminiKey = secrets.GEMINI_API_KEY;
+  const originalSecretHfKey = secrets.HUGGINGFACE_API_KEY;
 
   let mockEmbedContent;
 
   beforeEach(() => {
     jest.clearAllMocks();
     _resetClient();
+    delete process.env.HUGGINGFACE_API_KEY;
+    secrets.HUGGINGFACE_API_KEY = "";
     process.env.GEMINI_API_KEY = "test-gemini-key";
     secrets.GEMINI_API_KEY = "test-gemini-key";
 
@@ -27,11 +31,13 @@ describe("embeddingService", () => {
   });
 
   afterAll(() => {
-    process.env.GEMINI_API_KEY = originalEnvKey;
-    secrets.GEMINI_API_KEY = originalSecretKey;
+    process.env.GEMINI_API_KEY = originalEnvGeminiKey;
+    process.env.HUGGINGFACE_API_KEY = originalEnvHfKey;
+    secrets.GEMINI_API_KEY = originalSecretGeminiKey;
+    secrets.HUGGINGFACE_API_KEY = originalSecretHfKey;
   });
 
-  describe("embedText", () => {
+  describe("embedText (Gemini provider)", () => {
     test("validates that text is a non-empty string", async () => {
       await expect(embedText("")).rejects.toThrow("embedText: text must be a non-empty string.");
       await expect(embedText("   ")).rejects.toThrow("embedText: text must be a non-empty string.");
@@ -40,9 +46,11 @@ describe("embeddingService", () => {
       await expect(embedText({})).rejects.toThrow("embedText: text must be a non-empty string.");
     });
 
-    test("throws explicit error when GEMINI_API_KEY is missing", async () => {
+    test("throws explicit error when API keys are missing", async () => {
       delete process.env.GEMINI_API_KEY;
       secrets.GEMINI_API_KEY = "";
+      delete process.env.HUGGINGFACE_API_KEY;
+      secrets.HUGGINGFACE_API_KEY = "";
 
       await expect(embedText("Legal dispute query")).rejects.toThrow(
         "Embedding provider unavailable: GEMINI_API_KEY is missing."
@@ -59,8 +67,9 @@ describe("embeddingService", () => {
 
       expect(mockEmbedContent).toHaveBeenCalledTimes(1);
       expect(mockEmbedContent).toHaveBeenCalledWith({
-        model: "text-embedding-004",
+        model: "gemini-embedding-001",
         contents: "Tenant eviction notice notice period",
+        config: { outputDimensionality: 768 },
       });
       expect(result).toHaveLength(EMBEDDING_DIMS);
       expect(result).toBe(mockVector);
@@ -92,7 +101,7 @@ describe("embeddingService", () => {
       });
 
       await expect(embedText("Test input")).rejects.toThrow(
-        "Gemini embedding response shape invalid: expected an array with 768 values, received 512."
+        "Embedding response shape invalid: expected an array with 768 values, received 512."
       );
 
       // Returned values is not an array (null / empty)
@@ -101,7 +110,58 @@ describe("embeddingService", () => {
       });
 
       await expect(embedText("Test input")).rejects.toThrow(
-        "Gemini embedding response shape invalid: expected an array with 768 values, received null."
+        "Embedding response shape invalid: expected an array with 768 values, received null."
+      );
+    });
+  });
+
+  describe("embedText (Hugging Face provider)", () => {
+    const originalFetch = global.fetch;
+
+    beforeEach(() => {
+      process.env.HUGGINGFACE_API_KEY = "hf_test_token";
+      secrets.HUGGINGFACE_API_KEY = "hf_test_token";
+      global.fetch = jest.fn();
+    });
+
+    afterEach(() => {
+      global.fetch = originalFetch;
+    });
+
+    test("successfully embeds text using Hugging Face 1024-dim BGE-M3 model", async () => {
+      const mockVector1024 = new Array(1024).fill(0.005);
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockVector1024,
+      });
+
+      const result = await embedText("Labour law compliance query");
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(result).toHaveLength(1024);
+      expect(result).toEqual(mockVector1024);
+    });
+
+    test("handles Hugging Face nested array output format", async () => {
+      const mockVector1024 = new Array(1024).fill(0.007);
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => [mockVector1024],
+      });
+
+      const result = await embedText("Consumer protection query");
+      expect(result).toHaveLength(1024);
+    });
+
+    test("throws clear error when Hugging Face API responds with error status", async () => {
+      global.fetch.mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        statusText: "Service Unavailable",
+        text: async () => "Model is currently loading",
+      });
+
+      await expect(embedText("Test query")).rejects.toThrow(
+        "Hugging Face embedding request failed (503): Model is currently loading"
       );
     });
   });

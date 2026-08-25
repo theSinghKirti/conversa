@@ -11,16 +11,18 @@ const app = express();
 
 app.set("trust proxy", 1);
 
-const allowedOrigins = [
-  "http://localhost:5173",
-  "https://conversa-nu-taupe.vercel.app",
-  process.env.FRONTEND_URL,
-].filter(Boolean);
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+  if (ALLOWED_ORIGINS.includes("*")) return true;
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
+  if (origin.endsWith(".vercel.app")) return true;
+  return false;
+};
 
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
+      if (isAllowedOrigin(origin)) {
         return callback(null, true);
       }
       return callback(new Error(`CORS blocked origin: ${origin}`));

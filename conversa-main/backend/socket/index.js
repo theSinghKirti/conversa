@@ -12,10 +12,23 @@ let io;
 // (handles multiple tabs / devices).
 const userSocketMap = new Map();
 
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+  if (ALLOWED_ORIGINS.includes("*")) return true;
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
+  if (origin.endsWith(".vercel.app")) return true;
+  return false;
+};
+
 const initSocket = (server) => {
   io = new Server(server, {
     cors: {
-      origin: ALLOWED_ORIGINS,
+      origin(origin, callback) {
+        if (isAllowedOrigin(origin)) {
+          return callback(null, true);
+        }
+        return callback(new Error(`Socket CORS blocked origin: ${origin}`));
+      },
       methods: ["GET", "POST"],
       credentials: true,
     },

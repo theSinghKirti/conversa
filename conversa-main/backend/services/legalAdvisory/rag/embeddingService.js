@@ -1,17 +1,37 @@
 const { GoogleGenAI } = require("@google/genai");
 const secrets = require("../../../secrets.js");
 
-const EMBEDDING_MODEL = "text-embedding-004";
-const EMBEDDING_DIMS = 768;
+const DEFAULT_HF_MODEL = "BAAI/bge-m3";
+const DEFAULT_GEMINI_MODEL = "gemini-embedding-001";
 
 let ai;
 let cachedApiKey;
 
-const getClient = () => {
-  const apiKey = process.env.GEMINI_API_KEY || secrets.GEMINI_API_KEY;
-  if (!apiKey || typeof apiKey !== "string" || apiKey.trim().length === 0) {
-    throw new Error("Embedding provider unavailable: GEMINI_API_KEY is missing.");
+const getActiveProvider = () => {
+  const hfKey = process.env.HUGGINGFACE_API_KEY || secrets.HUGGINGFACE_API_KEY || process.env.HF_TOKEN;
+  if (hfKey && typeof hfKey === "string" && hfKey.trim().length > 0) {
+    return {
+      provider: "huggingface",
+      apiKey: hfKey.trim(),
+      model: process.env.HUGGINGFACE_EMBEDDING_MODEL || secrets.HUGGINGFACE_EMBEDDING_MODEL || DEFAULT_HF_MODEL,
+      expectedDims: 1024,
+    };
   }
+
+  const geminiKey = process.env.GEMINI_API_KEY || secrets.GEMINI_API_KEY;
+  if (geminiKey && typeof geminiKey === "string" && geminiKey.trim().length > 0) {
+    return {
+      provider: "gemini",
+      apiKey: geminiKey.trim(),
+      model: DEFAULT_GEMINI_MODEL,
+      expectedDims: 768,
+    };
+  }
+
+  return { provider: "none", apiKey: null, model: null, expectedDims: 768 };
+};
+
+const getGeminiClient = (apiKey) => {
   if (!ai || cachedApiKey !== apiKey) {
     ai = new GoogleGenAI({ apiKey });
     cachedApiKey = apiKey;
@@ -24,7 +44,7 @@ const _resetClient = () => {
   cachedApiKey = null;
 };
 
-function validateEmbeddingValues(values) {
+function validateEmbeddingValues(values, expectedDims) {
   const actualDims = Array.isArray(values)
     ? values.length
     : values === undefined
@@ -32,9 +52,11 @@ function validateEmbeddingValues(values) {
     : values === null
     ? "null"
     : typeof values;
-  if (!Array.isArray(values) || values.length !== EMBEDDING_DIMS) {
+
+  const dims = expectedDims || 768;
+  if (!Array.isArray(values) || values.length !== dims) {
     throw new Error(
-      `Gemini embedding response shape invalid: expected an array with ${EMBEDDING_DIMS} values, received ${actualDims}.`
+      `Embedding response shape invalid: expected an array with ${dims} values, received ${actualDims}.`
     );
   }
 
@@ -42,33 +64,66 @@ function validateEmbeddingValues(values) {
 }
 
 /**
- * Embed a single text string.
+ * Embed a single text string using the active configured provider.
  *
  * @param {string} text
- * @returns {Promise<number[]>} — 768-dimensional embedding vector
+ * @returns {Promise<number[]>} — Dense embedding vector
  */
 async function embedText(text) {
   if (typeof text !== "string" || text.trim().length === 0) {
     throw new Error("embedText: text must be a non-empty string.");
   }
 
-  const client = getClient();
+  const active = getActiveProvider();
 
-  let response;
-  try {
-    response = await client.models.embedContent({
-      model: EMBEDDING_MODEL,
-      contents: text.trim(),
-    });
-  } catch (err) {
-    throw new Error(`Gemini embedding request failed: ${err?.message || String(err)}`);
+  if (active.provider === "huggingface") {
+    const url = `https://router.huggingface.co/hf-inference/models/${active.model}`;
+    let response;
+    try {
+      response = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${active.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ inputs: text.trim() }),
+      });
+    } catch (netErr) {
+      throw new Error(`Hugging Face embedding network error: ${netErr.message}`);
+    }
+
+    if (!response.ok) {
+      const errBody = await response.text().catch(() => "");
+      throw new Error(`Hugging Face embedding request failed (${response.status}): ${errBody || response.statusText}`);
+    }
+
+    const data = await response.json();
+    const rawVector = Array.isArray(data) && Array.isArray(data[0]) ? data[0] : data;
+    return validateEmbeddingValues(rawVector, active.expectedDims);
   }
 
-  const values =
-    response?.embeddings?.[0]?.values !== undefined
-      ? response.embeddings[0].values
-      : response?.embedding?.values;
-  return validateEmbeddingValues(values);
+  if (active.provider === "gemini") {
+    const client = getGeminiClient(active.apiKey);
+
+    let response;
+    try {
+      response = await client.models.embedContent({
+        model: active.model,
+        contents: text.trim(),
+        config: { outputDimensionality: 768 },
+      });
+    } catch (err) {
+      throw new Error(`Gemini embedding request failed: ${err?.message || String(err)}`);
+    }
+
+    const values =
+      response?.embeddings?.[0]?.values !== undefined
+        ? response.embeddings[0].values
+        : response?.embedding?.values;
+    return validateEmbeddingValues(values, active.expectedDims);
+  }
+
+  throw new Error("Embedding provider unavailable: GEMINI_API_KEY is missing.");
 }
 
 /**
@@ -96,4 +151,6 @@ async function embedBatch(texts, { delayMs = 150 } = {}) {
   return results;
 }
 
-module.exports = { embedText, embedBatch, EMBEDDING_DIMS, _resetClient };
+const EMBEDDING_DIMS = 768;
+
+module.exports = { embedText, embedBatch, EMBEDDING_DIMS, getActiveProvider, _resetClient };

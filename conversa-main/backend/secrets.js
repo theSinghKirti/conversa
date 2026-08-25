@@ -16,6 +16,10 @@ const MONGO_DB_NAME = process.env.MONGO_DB_NAME;
 const JWT_SECRET = process.env.JWT_SECRET;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3-flash-preview";
+const HUGGINGFACE_API_KEY = process.env.HUGGINGFACE_API_KEY || process.env.HF_TOKEN;
+const HUGGINGFACE_EMBEDDING_MODEL = process.env.HUGGINGFACE_EMBEDDING_MODEL || "BAAI/bge-m3";
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
 const EMAIL = process.env.EMAIL;
 const PASSWORD = process.env.PASSWORD;
 const BREVO_API_KEY = process.env.BREVO_API_KEY;
@@ -61,6 +65,10 @@ const validateEnv = () => {
     "AWS_SECRET",
     "GEMINI_API_KEY",
     "GEMINI_MODEL",
+    "HUGGINGFACE_API_KEY",
+    "HUGGINGFACE_EMBEDDING_MODEL",
+    "GROQ_API_KEY",
+    "GROQ_MODEL",
   ];
   const missingOptional = optional.filter((name) => !process.env[name]);
   if (missingOptional.length > 0) {
@@ -98,6 +106,10 @@ module.exports = {
   AWS_SECRET,
   GEMINI_API_KEY,
   GEMINI_MODEL,
+  HUGGINGFACE_API_KEY,
+  HUGGINGFACE_EMBEDDING_MODEL,
+  GROQ_API_KEY,
+  GROQ_MODEL,
   EMAIL,
   PASSWORD,
   BREVO_API_KEY,
