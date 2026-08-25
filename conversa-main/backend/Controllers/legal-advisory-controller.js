@@ -1,4 +1,7 @@
 const LegalAdvisory = require("../Models/LegalAdvisory.js");
+const mongoose = require("mongoose");
+const LegalKnowledgeChunk = require("../Models/LegalKnowledgeChunk.js");
+const LegalPrecedent = require("../Models/LegalPrecedent.js");
 const { generateAdvisory } = require("../services/legalAdvisory/legalAdvisoryService.js");
 
 /**
@@ -111,4 +114,40 @@ const analyzeQuery = async (req, res) => {
   }
 };
 
-module.exports = { analyzeQuery };
+/**
+ * GET /api/legal-advisory/health/data
+ *
+ * Admin-only diagnostic endpoint that reports the active database and
+ * collection counts without exposing credentials or document content.
+ */
+const getDataHealth = async (_req, res) => {
+  try {
+    const databaseConnected = mongoose.connection.readyState === 1;
+    const databaseName = mongoose.connection?.db?.databaseName || mongoose.connection?.name || null;
+
+    const [legalKnowledgeChunks, legalPrecedents] = databaseConnected
+      ? await Promise.all([
+          LegalKnowledgeChunk.countDocuments(),
+          LegalPrecedent.countDocuments(),
+        ])
+      : [0, 0];
+
+    return res.status(200).json({
+      success: true,
+      databaseConnected,
+      databaseName,
+      collections: {
+        legalKnowledgeChunks,
+        legalPrecedents,
+      },
+    });
+  } catch (error) {
+    console.error("[legal-advisory-controller] Data health check failed:", error.message);
+    return res.status(500).json({
+      success: false,
+      error: "Unable to read database health.",
+    });
+  }
+};
+
+module.exports = { analyzeQuery, getDataHealth };

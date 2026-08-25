@@ -68,6 +68,24 @@ const validateEnv = () => {
       `Optional environment variables not set: ${missingOptional.join(", ")}`
     );
   }
+
+  if (isProduction) {
+    if (!process.env.MONGO_DB_NAME) {
+      console.warn("Production MONGO_DB_NAME is not set. The backend will rely on the database configured in MONGO_URI or Mongoose defaults.");
+    }
+
+    if (typeof MONGO_URI === "string" && /localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(MONGO_URI)) {
+      console.warn("Production MONGO_URI appears to target localhost. Verify the deployment database configuration.");
+    }
+
+    if (typeof FRONTEND_URL === "string" && /localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(FRONTEND_URL)) {
+      console.warn("Production FRONTEND_URL appears to target localhost. Verify the deployment frontend configuration.");
+    }
+
+    if (typeof CORS_ORIGIN === "string" && /localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(CORS_ORIGIN)) {
+      console.warn("Production CORS_ORIGIN appears to include localhost. Verify CORS configuration for the deployed frontend.");
+    }
+  }
 };
 
 module.exports = {

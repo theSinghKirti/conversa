@@ -6,8 +6,25 @@
  * place to update.
  */
 
-const API_BASE: string =
-    import.meta.env.VITE_API_URL ?? "http://localhost:5500";
+const configuredApiBase = import.meta.env.VITE_API_URL?.trim();
+const isLocalFrontendHost =
+    typeof window === "undefined" || /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(window.location.hostname);
+
+if (!isLocalFrontendHost) {
+    if (!configuredApiBase) {
+        throw new Error(
+            "VITE_API_URL is required for deployed frontend builds. Set it to the deployed backend base URL."
+        );
+    }
+
+    if (/^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$/i.test(configuredApiBase)) {
+        throw new Error(
+            "VITE_API_URL cannot point to localhost for deployed frontend builds. Set it to the deployed backend base URL."
+        );
+    }
+}
+
+const API_BASE: string = configuredApiBase || "http://localhost:5500";
 
 /* ─── payload / response types ─────────────────────────────────────────── */
 

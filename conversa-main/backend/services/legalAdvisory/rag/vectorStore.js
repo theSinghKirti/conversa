@@ -1,5 +1,6 @@
 const LegalKnowledgeChunk = require("../../../Models/LegalKnowledgeChunk.js");
 const { getDomainFilter } = require("./domainMatcher.js");
+const DEBUG_AUDIT = process.env.DEBUG_LEGAL_RETRIEVAL_AUDIT === "1";
 
 /**
  * vectorStore.js — Provider-agnostic vector store interface.
@@ -194,6 +195,20 @@ async function similaritySearch(queryVec, opts = {}) {
       },
     },
   ];
+
+  if (DEBUG_AUDIT) {
+    const totalCandidates = await LegalKnowledgeChunk.countDocuments();
+    const metadataCandidates = Object.keys(matchStage).length
+      ? await LegalKnowledgeChunk.countDocuments(matchStage)
+      : totalCandidates;
+
+    const thresholdPipeline = pipeline.slice(0, 5);
+    const thresholdCandidates = await LegalKnowledgeChunk.aggregate(thresholdPipeline);
+
+    console.log(`[Legal RAG] Candidate documents before filtering: ${totalCandidates}`);
+    console.log(`[Legal RAG] Candidate documents after metadata filtering: ${metadataCandidates}`);
+    console.log(`[Legal RAG] Candidate documents after threshold filtering: ${thresholdCandidates.length}`);
+  }
 
   return await LegalKnowledgeChunk.aggregate(pipeline);
 }

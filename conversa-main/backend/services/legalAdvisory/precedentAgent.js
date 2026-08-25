@@ -7,6 +7,11 @@ const {
   isDomainCompatible,
   isGenericOrUnknownDomain,
 } = require("./rag/domainMatcher.js");
+const DEBUG_AUDIT = process.env.DEBUG_LEGAL_RETRIEVAL_AUDIT === "1";
+
+function auditLog(message) {
+  if (DEBUG_AUDIT) console.log(message);
+}
 
 /**
  * precedentAgent.js — Legal Precedent Search Agent
@@ -39,8 +44,8 @@ async function autoSeedPrecedentStore() {
 
       for (const item of precedents) {
         const textToEmbed = `${item.caseName} ${item.court} ${item.citation || ""} ${item.legalDomain} ${item.summary} ${item.keyHoldings}`;
-        const vector = await embedText(textToEmbed);
-        recordsToUpsert.push({ ...item, vector });
+        const embedding = await embedText(textToEmbed);
+        recordsToUpsert.push({ ...item, embedding });
       }
 
       await upsertPrecedents(recordsToUpsert);
@@ -112,6 +117,7 @@ function generateRelevanceExplanation(precedent, intake) {
  */
 async function runPrecedentSearch(intake, legalSources = [], jurisdiction = "India") {
   console.log("[PrecedentAgent] Stage 3 — Starting Precedent Search…");
+  auditLog("[Precedent Retrieval] START");
 
   // 1. Check DB count, auto-seed if empty
   try {
@@ -123,10 +129,15 @@ async function runPrecedentSearch(intake, legalSources = [], jurisdiction = "Ind
     }
 
     if (precedentCount === 0) {
+      auditLog("[Precedent Retrieval] Final result count: 0");
+      auditLog("[Precedent Retrieval] Final result status: NOT_CONFIGURED");
       return { status: "NOT_CONFIGURED", precedents: [] };
     }
   } catch (dbErr) {
     console.error("[PrecedentAgent] Database check failed:", dbErr.message);
+    auditLog("[Precedent Retrieval] Search/embedding status: FAILED (DATABASE_ERROR)");
+    auditLog("[Precedent Retrieval] Final result count: 0");
+    auditLog("[Precedent Retrieval] Final result status: FAILED");
     return { status: "FAILED", precedents: [] };
   }
 
@@ -138,8 +149,10 @@ async function runPrecedentSearch(intake, legalSources = [], jurisdiction = "Ind
   let queryVec;
   try {
     queryVec = await embedText(queryText);
+    auditLog("[Precedent Retrieval] Search/embedding status: SUCCESS");
   } catch (err) {
     console.error("[PrecedentAgent] Embedding query failed:", err.message);
+    auditLog("[Precedent Retrieval] Search/embedding status: FAILED (EMBEDDING_PROVIDER_ERROR)");
     return { status: "FAILED", precedents: [] };
   }
 
@@ -223,6 +236,8 @@ async function runPrecedentSearch(intake, legalSources = [], jurisdiction = "Ind
     }
   } catch (searchErr) {
     console.error("[PrecedentAgent] Vector similarity search failed:", searchErr.message);
+    auditLog("[Precedent Retrieval] Final result count: 0");
+    auditLog("[Precedent Retrieval] Final result status: FAILED (DATABASE_ERROR)");
     return { status: "FAILED", precedents: [] };
   }
 
@@ -245,6 +260,8 @@ async function runPrecedentSearch(intake, legalSources = [], jurisdiction = "Ind
 
   const status = formattedPrecedents.length > 0 ? "SUCCESS" : "NO_RESULTS";
   console.log(`[PrecedentAgent] Search completed with status="${status}" (${formattedPrecedents.length} precedent(s) returned).`);
+  auditLog(`[Precedent Retrieval] Final result count: ${formattedPrecedents.length}`);
+  auditLog(`[Precedent Retrieval] Final result status: ${status}`);
 
   return {
     status,

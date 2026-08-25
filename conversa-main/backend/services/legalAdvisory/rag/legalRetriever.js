@@ -7,8 +7,12 @@ const { processDocument } = require("./documentProcessor.js");
 const {
   isDomainCompatible,
   isGenericOrUnknownDomain,
-  normalizeDomain,
 } = require("./domainMatcher.js");
+const DEBUG_AUDIT = process.env.DEBUG_LEGAL_RETRIEVAL_AUDIT === "1";
+
+function auditLog(message) {
+  if (DEBUG_AUDIT) console.log(message);
+}
 
 /**
  * legalRetriever.js — Legal Knowledge RAG Retriever
@@ -43,8 +47,8 @@ async function autoSeedKnowledgeStore() {
 
       for (const chunk of chunks) {
         const textToEmbed = `${chunk.title} ${chunk.legalDomain} ${chunk.content}`;
-        const vector = await embedText(textToEmbed);
-        chunksWithEmbeddings.push({ ...chunk, vector });
+        const embedding = await embedText(textToEmbed);
+        chunksWithEmbeddings.push({ ...chunk, embedding });
       }
 
       await upsertChunks(chunksWithEmbeddings);
@@ -98,6 +102,7 @@ function buildRetrievalQuery(intake) {
 async function retrieve(intake, opts = {}) {
   const { limit = DEFAULT_LIMIT } = opts;
   const { jurisdiction = "India", legalDomain } = intake;
+  auditLog("[Legal RAG] START");
 
   // 1. Check DB count, auto-seed if empty
   try {
@@ -109,10 +114,12 @@ async function retrieve(intake, opts = {}) {
     }
 
     if (docCount === 0) {
+      auditLog("[Legal RAG] Final result status: NOT_CONFIGURED");
       return { status: "NOT_CONFIGURED", sources: [] };
     }
   } catch (dbErr) {
     console.error("[legalRetriever] Database check failed:", dbErr.message);
+    auditLog("[Legal RAG] Final result status: FAILED (DATABASE_ERROR)");
     return { status: "FAILED", sources: [] };
   }
 
@@ -124,8 +131,10 @@ async function retrieve(intake, opts = {}) {
   let queryVec;
   try {
     queryVec = await embedText(query);
+    auditLog("[Legal RAG] Query embedding: SUCCESS");
   } catch (err) {
     console.error("[legalRetriever] Query embedding failed:", err.message);
+    auditLog("[Legal RAG] Query embedding: FAILED (EMBEDDING_PROVIDER_ERROR)");
     return { status: "FAILED", sources: [] };
   }
 
@@ -225,6 +234,7 @@ async function retrieve(intake, opts = {}) {
 
   const status = formattedSources.length > 0 ? "SUCCESS" : "NO_RESULTS";
   console.log(`[legalRetriever] Search complete with status="${status}" (${formattedSources.length} source(s) returned).`);
+  auditLog(`[Legal RAG] Final result status: ${status}`);
 
   return {
     status,

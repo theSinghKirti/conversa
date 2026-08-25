@@ -22,7 +22,7 @@ async function runE2ETests() {
   const mongoUri = MONGO_URI || "mongodb://localhost:27017/";
   const dbName = MONGO_DB_NAME || "conversa";
 
-  console.log(`Connecting to MongoDB at ${mongoUri} (${dbName})…`);
+  console.log(`Connecting to MongoDB (database: ${dbName || "[default]"})…`);
   await mongoose.connect(mongoUri, { dbName });
   console.log("Connected to MongoDB successfully.\n");
 

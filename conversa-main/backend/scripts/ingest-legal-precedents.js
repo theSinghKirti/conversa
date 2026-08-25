@@ -5,7 +5,8 @@ const dotenv = require("dotenv");
 
 dotenv.config({ path: path.join(__dirname, "../.env") });
 
-const { MONGO_URI, MONGO_DB_NAME } = process.env;
+const { resolveMongoConnection } = require("./mongoConnectionConfig.js");
+const { mongoUri, dbName } = resolveMongoConnection({ allowLocalFallback: true });
 
 const { embedBatch } = require("../services/legalAdvisory/rag/embeddingService.js");
 const { upsertPrecedents } = require("../services/legalAdvisory/precedentSearchTool.js");
@@ -31,10 +32,7 @@ async function runPrecedentIngestion() {
   console.log(" Legal Precedent Ingestion Script");
   console.log("=================================================\n");
 
-  const mongoUri = MONGO_URI || "mongodb://localhost:27017/";
-  const dbName = MONGO_DB_NAME || "conversa";
-
-  console.log(`Connecting to MongoDB at ${mongoUri} (${dbName})…`);
+  console.log(`Connecting to MongoDB (database: ${dbName || "[default]"})…`);
   await mongoose.connect(mongoUri, { dbName });
   console.log("Connected to MongoDB successfully.\n");
 
@@ -49,7 +47,13 @@ async function runPrecedentIngestion() {
 
   console.log(`Found ${jsonFiles.length} precedent file(s) to process:\n`);
 
-  let totalPrecedents = 0;
+  const stats = {
+    processed: 0,
+    inserted: 0,
+    updated: 0,
+    skipped: 0,
+    failed: 0,
+  };
 
   for (const filePath of jsonFiles) {
     const relativePath = path.relative(precedentsDir, filePath);
@@ -62,6 +66,7 @@ async function runPrecedentIngestion() {
 
       if (!Array.isArray(precedentsArray) || precedentsArray.length === 0) {
         console.log(`  -> File is empty or not an array. Skipping.`);
+        stats.skipped++;
         continue;
       }
 
@@ -78,19 +83,26 @@ async function runPrecedentIngestion() {
         embedding: embeddings[idx],
       }));
 
-      await upsertPrecedents(precedentsWithEmbeddings);
+      const writeResult = await upsertPrecedents(precedentsWithEmbeddings);
       console.log(`  -> Successfully upserted ${precedentsWithEmbeddings.length} precedent(s) to vector store.`);
 
-      totalPrecedents += precedentsWithEmbeddings.length;
+      stats.inserted += Number(writeResult?.upsertedCount || 0);
+      stats.updated += Number(writeResult?.modifiedCount || 0);
+      stats.processed++;
     } catch (err) {
       console.error(`  ❌ FAILED processing ${relativePath}:`, err.message);
+      stats.failed++;
     }
   }
 
   console.log(`\n=================================================`);
   console.log(` Precedent Ingestion Complete`);
   console.log(`=================================================`);
-  console.log(`Total Precedents Stored: ${totalPrecedents}`);
+  console.log(`Processed: ${stats.processed}`);
+  console.log(`Inserted: ${stats.inserted}`);
+  console.log(`Updated: ${stats.updated}`);
+  console.log(`Skipped: ${stats.skipped}`);
+  console.log(`Failed: ${stats.failed}`);
 
   await mongoose.disconnect();
   console.log("\nDone! MongoDB connection closed.");

@@ -1,5 +1,6 @@
 const LegalPrecedent = require("../../Models/LegalPrecedent.js");
 const { getDomainFilter } = require("./rag/domainMatcher.js");
+const DEBUG_AUDIT = process.env.DEBUG_LEGAL_RETRIEVAL_AUDIT === "1";
 
 /**
  * precedentSearchTool.js — Provider-agnostic Legal Precedent search interface.
@@ -166,6 +167,20 @@ async function searchPrecedents(queryVec, opts = {}) {
       },
     },
   ];
+
+  if (DEBUG_AUDIT) {
+    const totalCandidates = await LegalPrecedent.countDocuments();
+    const metadataCandidates = Object.keys(matchStage).length
+      ? await LegalPrecedent.countDocuments(matchStage)
+      : totalCandidates;
+
+    const thresholdPipeline = pipeline.slice(0, 5);
+    const thresholdCandidates = await LegalPrecedent.aggregate(thresholdPipeline);
+
+    console.log(`[Precedent Retrieval] Candidate documents before filtering: ${totalCandidates}`);
+    console.log(`[Precedent Retrieval] Candidate documents after jurisdiction/domain filtering: ${metadataCandidates}`);
+    console.log(`[Precedent Retrieval] Candidate documents after threshold filtering: ${thresholdCandidates.length}`);
+  }
 
   return await LegalPrecedent.aggregate(pipeline);
 }
