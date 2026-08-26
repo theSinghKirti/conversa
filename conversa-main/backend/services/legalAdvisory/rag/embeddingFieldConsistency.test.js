@@ -42,41 +42,34 @@ describe("MongoDB Embedding Field Consistency End-to-End Audit", () => {
   });
 
   describe("Ingestion & Auto-Seeding Field Name Verification", () => {
-    test("knowledge auto-seeding writes 'embedding' and never writes 'vector'", async () => {
+    test("knowledge ingestion writes 'embedding' and never writes 'vector'", async () => {
       let capturedOps = [];
-      LegalKnowledgeChunk.countDocuments
-        .mockResolvedValueOnce(0) // initial check triggers auto-seed
-        .mockResolvedValueOnce(10); // after auto-seed
-
       LegalKnowledgeChunk.bulkWrite.mockImplementation((ops) => {
         capturedOps = ops;
         return Promise.resolve({ upsertedCount: ops.length });
       });
 
-      LegalKnowledgeChunk.aggregate.mockResolvedValue([
+      const dummy1024 = new Array(1024).fill(0.01);
+      await upsertChunks([
         {
           chunkId: "c1",
           title: "Test",
           content: "Content",
           legalDomain: "Labour Law",
-          relevanceScore: 0.9,
+          jurisdiction: "India",
+          source: "Test",
+          chunkIndex: 0,
+          totalChunks: 1,
+          embedding: dummy1024,
         },
       ]);
-
-      await retrieve({
-        jurisdiction: "India",
-        legalDomain: "Labour Law",
-        caseType: "Dispute",
-        summary: "Termination query",
-        keywords: ["termination"],
-      });
 
       expect(capturedOps.length).toBeGreaterThan(0);
       for (const op of capturedOps) {
         const doc = op.updateOne.update.$set;
         expect(doc).toHaveProperty("embedding");
         expect(Array.isArray(doc.embedding)).toBe(true);
-        expect(doc.embedding).toHaveLength(768);
+        expect(doc.embedding).toHaveLength(1024);
         expect(doc).not.toHaveProperty("vector");
       }
     });

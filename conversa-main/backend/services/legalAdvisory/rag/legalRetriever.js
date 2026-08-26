@@ -1,9 +1,6 @@
-const fs = require("fs");
-const path = require("path");
 const LegalKnowledgeChunk = require("../../../Models/LegalKnowledgeChunk.js");
-const { embedText, getActiveProvider } = require("./embeddingService.js");
-const { similaritySearch, upsertChunks } = require("./vectorStore.js");
-const { processDocument } = require("./documentProcessor.js");
+const { embedText } = require("./embeddingService.js");
+const { similaritySearch } = require("./vectorStore.js");
 const {
   isDomainCompatible,
   isGenericOrUnknownDomain,
@@ -17,77 +14,16 @@ function auditLog(message) {
 /**
  * legalRetriever.js — Legal Knowledge RAG Retriever
  *
- * Enforces quality filtering, domain normalization, and confidence metadata tagging.
+ * Query-time retrieval flow:
+ *   1. Validate input & construct retrieval query
+ *   2. Generate 1024-dimensional query embedding via Hugging Face BAAI/bge-m3
+ *   3. Search MongoDB vector store using similaritySearch
+ *   4. Return top relevant chunks with status "SUCCESS" or "NO_RESULTS"
  *
- * STATUS CODES:
- *   - "SUCCESS": Vector store searched and 1+ relevant knowledge chunks returned
- *   - "NO_RESULTS": Search completed successfully, store is populated, but query yielded 0 matches above threshold
- *   - "NOT_CONFIGURED": Vector store collection is empty and seed files unavailable
- *   - "FAILED": Embedding API error or DB aggregation failure
+ * If embedding or search fails, errors are thrown upward immediately.
  */
 
 const DEFAULT_LIMIT = 5;
-
-/**
- * Auto-seeds the vector store from local seed files if MongoDB collection is empty.
- * Returns false if seed directory is missing or contains 0 JSON files (unconfigured).
- * Throws an Error with code "AUTO_SEED_FAILED" if reading, processing, or embedding fails for any file.
- */
-async function autoSeedKnowledgeStore() {
-  const dataDir = path.join(__dirname, "../../../data/legal-knowledge/india");
-  if (!fs.existsSync(dataDir)) {
-    console.warn(`[legalRetriever] Seed data directory does not exist: ${dataDir}`);
-    return false;
-  }
-
-  const files = fs.readdirSync(dataDir).filter((f) => f.endsWith(".json"));
-  if (files.length === 0) {
-    console.warn(`[legalRetriever] Seed data directory contains zero JSON files: ${dataDir}`);
-    return false;
-  }
-
-  let activeProvider = null;
-  try {
-    activeProvider = typeof getActiveProvider === "function" ? getActiveProvider() : null;
-  } catch (_err) {
-    activeProvider = null;
-  }
-
-  console.log(`[legalRetriever] Auto-seeding LegalKnowledgeChunk store from ${files.length} seed dataset(s)…`);
-
-  for (const file of files) {
-    const filePath = path.join(dataDir, file);
-    try {
-      const rawData = JSON.parse(fs.readFileSync(filePath, "utf8"));
-      const chunks = processDocument(rawData);
-      const chunksWithEmbeddings = [];
-
-      for (const chunk of chunks) {
-        const textToEmbed = `${chunk.title} ${chunk.legalDomain} ${chunk.content}`;
-        const embedding = await embedText(textToEmbed);
-        chunksWithEmbeddings.push({
-          ...chunk,
-          embedding,
-          embeddingProvider: activeProvider?.provider || "gemini",
-          embeddingModel: activeProvider?.model || "gemini-embedding-001",
-          embeddingDimensions: Array.isArray(embedding) ? embedding.length : null,
-        });
-      }
-
-      await upsertChunks(chunksWithEmbeddings);
-    } catch (err) {
-      console.error(`[legalRetriever] Auto-seed failed for ${file}:`, err.message);
-      const seedErr = new Error(`Legal knowledge auto-seeding failed for ${file}: ${err.message}`);
-      seedErr.code = "AUTO_SEED_FAILED";
-      seedErr.cause = err;
-      throw seedErr;
-    }
-  }
-
-  const count = await LegalKnowledgeChunk.countDocuments();
-  console.log(`[legalRetriever] Auto-seeding complete. Total chunks in DB: ${count}.`);
-  return true;
-}
 
 function buildRetrievalQuery(intake) {
   const { caseType, legalDomain, summary, keywords, jurisdiction } = intake;
@@ -114,7 +50,7 @@ function buildRetrievalQuery(intake) {
  * }} intake
  * @param {{ limit?: number }} [opts]
  * @returns {Promise<{
- *   status: "SUCCESS" | "NO_RESULTS" | "NOT_CONFIGURED" | "FAILED",
+ *   status: "SUCCESS" | "NO_RESULTS",
  *   sources: Array<{
  *     title: string,
  *     content: string,
@@ -128,46 +64,19 @@ function buildRetrievalQuery(intake) {
  * }>}
  */
 async function retrieve(intake, opts = {}) {
+  if (!intake || typeof intake !== "object") {
+    throw new Error("legalRetriever: intake must be a valid object.");
+  }
+
   const { limit = DEFAULT_LIMIT } = opts;
   const { jurisdiction = "India", legalDomain } = intake;
   auditLog("[Legal RAG] START");
 
-  // 1. Check DB count, auto-seed if empty
-  let docCount;
-  try {
-    docCount = await LegalKnowledgeChunk.countDocuments();
-  } catch (dbErr) {
-    console.error("[legalRetriever] Database check failed:", dbErr.message);
-    auditLog("[Legal RAG] Final result status: FAILED (DATABASE_ERROR)");
-    return { status: "FAILED", sources: [] };
-  }
-
-  if (docCount === 0) {
-    console.warn("[legalRetriever] Store empty in MongoDB. Attempting auto-seeding…");
-    const hasSeedData = await autoSeedKnowledgeStore();
-    if (!hasSeedData) {
-      auditLog("[Legal RAG] Final result status: NOT_CONFIGURED");
-      return { status: "NOT_CONFIGURED", sources: [] };
-    }
-
-    try {
-      docCount = await LegalKnowledgeChunk.countDocuments();
-    } catch (dbErr) {
-      console.error("[legalRetriever] Post-seed database check failed:", dbErr.message);
-      return { status: "FAILED", sources: [] };
-    }
-
-    if (docCount === 0) {
-      auditLog("[Legal RAG] Final result status: NOT_CONFIGURED");
-      return { status: "NOT_CONFIGURED", sources: [] };
-    }
-  }
-
-  // 2. Build search query
+  // 1. Build search query
   const query = buildRetrievalQuery(intake);
   console.log(`[legalRetriever] Search Query: "${query.slice(0, 120)}…"`);
 
-  // 3. Generate query embedding
+  // 2. Generate 1024-dim query embedding using Hugging Face
   let queryVec;
   try {
     queryVec = await embedText(query);
@@ -181,7 +90,7 @@ async function retrieve(intake, opts = {}) {
     throw err;
   }
 
-  // 4. Perform 3-pass similarity search with pass metadata tagging
+  // 3. Perform 3-pass similarity search with pass metadata tagging
   const taggedResults = [];
   const seenChunkIds = new Set();
   const isGeneric = isGenericOrUnknownDomain(legalDomain);
@@ -226,7 +135,7 @@ async function retrieve(intake, opts = {}) {
       }
     }
 
-    // Pass 3: Global fallback (Quality gate: require minScore >= 0.35 for generic/ambiguous queries)
+    // Pass 3: Global fallback
     if (taggedResults.length === 0) {
       const requiredScore = isGeneric ? 0.35 : 0.10;
 
@@ -238,7 +147,6 @@ async function retrieve(intake, opts = {}) {
       for (const chunk of pass3) {
         if (!seenChunkIds.has(chunk.chunkId)) {
           if (isGeneric) {
-            // Unrelated/generic queries must pass strict quality gate AND domain compatibility
             if (chunk.relevanceScore >= 0.35 && isDomainCompatible(chunk.legalDomain, legalDomain, true)) {
               seenChunkIds.add(chunk.chunkId);
               taggedResults.push({
@@ -259,14 +167,11 @@ async function retrieve(intake, opts = {}) {
       }
     }
   } catch (searchErr) {
-    console.error("[legalRetriever] Vector aggregation failed:", searchErr.message);
-    if (searchErr.code === "EMBEDDING_DIMENSION_MISMATCH") {
-      throw searchErr;
-    }
-    return { status: "FAILED", sources: [] };
+    console.error("[legalRetriever] Vector search failed:", searchErr.message);
+    throw searchErr;
   }
 
-  // 5. Shape final sources payload
+  // 4. Shape final top sources payload
   const formattedSources = taggedResults.slice(0, limit).map((chunk) => ({
     title:           chunk.title,
     content:         chunk.content,

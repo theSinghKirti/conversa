@@ -93,14 +93,24 @@ async function runIngestion() {
       const textsToEmbed = chunks.map((c) => `${c.title}. ${c.content}`);
       const embeddings = await embedBatch(textsToEmbed, { delayMs: 200 });
 
-      // 4. Attach embeddings and metadata to chunks
-      const chunksWithEmbeddings = chunks.map((chunk, index) => ({
-        ...chunk,
-        embedding: embeddings[index],
-        embeddingProvider: activeProvider.provider,
-        embeddingModel: activeProvider.model,
-        embeddingDimensions: embeddings[index].length,
-      }));
+      // 4. Validate and attach embeddings and metadata to chunks
+      const chunksWithEmbeddings = chunks.map((chunk, index) => {
+        const vec = embeddings[index];
+        if (!Array.isArray(vec) || vec.length !== 1024) {
+          const err = new Error(
+            `Invalid embedding vector for chunk "${chunk.chunkId || `chunk_${index}`}": expected 1024 numbers, got ${Array.isArray(vec) ? vec.length : typeof vec}`
+          );
+          err.code = "EMBEDDING_DIMENSION_INVALID";
+          throw err;
+        }
+        return {
+          ...chunk,
+          embedding: vec,
+          embeddingProvider: "huggingface",
+          embeddingModel: activeProvider.model || "BAAI/bge-large-en-v1.5",
+          embeddingDimensions: 1024,
+        };
+      });
 
       // 5. Upsert to vector store
       await upsertChunks(chunksWithEmbeddings);
@@ -109,8 +119,9 @@ async function runIngestion() {
       stats.inserted += chunksWithEmbeddings.length;
       stats.processed++;
     } catch (err) {
-      console.error(`  ❌ FAILED processing ${relativePath}:`, err.message);
+      console.error(`  ❌ FAILED processing ${relativePath} (Source: "${docObj?.source || "unknown"}"):`, err.message);
       stats.failed++;
+      throw err;
     }
   }
 

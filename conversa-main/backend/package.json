@@ -14,6 +14,7 @@
     "backfill:directory": "node scripts/backfill-directory-profiles.js",
     "ingest:legal": "node scripts/ingest-legal-knowledge.js && node scripts/ingest-legal-precedents.js",
     "ingest:knowledge": "node scripts/ingest-legal-knowledge.js",
+    "ingest:legal-knowledge": "node scripts/ingest-legal-knowledge.js",
     "ingest:precedents": "node scripts/ingest-legal-precedents.js",
     "verify:legal": "node scripts/diagnose-rag-and-precedents.js"
   },
