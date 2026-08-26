@@ -116,10 +116,6 @@ async function generateAdvisory(query, jurisdiction = "India") {
   const legalRetrievalStart = Date.now();
   console.log(`[Legal Retrieval] START timestamp ${legalRetrievalStart}`);
   const legalRetrievalPromise = retrieve(intake, { limit: 4, minScore: 0.25 })
-    .catch((ragErr) => {
-      console.error("[Orchestrator] Stage 2 RAG Exception:", ragErr.message);
-      return { status: "FAILED", sources: [] };
-    })
     .finally(() => {
       const legalRetrievalEnd = Date.now();
       console.log(`[Legal Retrieval] END timestamp ${legalRetrievalEnd} duration ${legalRetrievalEnd - legalRetrievalStart}ms`);
@@ -137,10 +133,17 @@ async function generateAdvisory(query, jurisdiction = "India") {
       console.log(`[Precedent Retrieval] END timestamp ${precedentRetrievalEnd} duration ${precedentRetrievalEnd - precedentRetrievalStart}ms`);
     });
 
-  const [ragResult, precedentResult] = await Promise.all([
-    legalRetrievalPromise,
-    precedentRetrievalPromise,
-  ]);
+  let ragResult;
+  let precedentResult;
+  try {
+    [ragResult, precedentResult] = await Promise.all([
+      legalRetrievalPromise,
+      precedentRetrievalPromise,
+    ]);
+  } catch (ragErr) {
+    console.error(`[Orchestrator] Stage 2 RAG Failed: ${ragErr.message}`);
+    throw ragErr;
+  }
 
   const parallelEnd = Date.now();
   console.log(`[Parallel Retrieval] TOTAL duration ${parallelEnd - parallelStart}ms`);
