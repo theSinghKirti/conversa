@@ -30,12 +30,22 @@ const DEFAULT_LIMIT = 5;
 
 /**
  * Auto-seeds the vector store from local seed files if MongoDB collection is empty.
+ * Returns false if seed directory is missing or contains 0 JSON files (unconfigured).
+ * Throws an Error with code "AUTO_SEED_FAILED" if reading, processing, or embedding fails for any file.
  */
 async function autoSeedKnowledgeStore() {
   const dataDir = path.join(__dirname, "../../../data/legal-knowledge/india");
-  if (!fs.existsSync(dataDir)) return;
+  if (!fs.existsSync(dataDir)) {
+    console.warn(`[legalRetriever] Seed data directory does not exist: ${dataDir}`);
+    return false;
+  }
 
   const files = fs.readdirSync(dataDir).filter((f) => f.endsWith(".json"));
+  if (files.length === 0) {
+    console.warn(`[legalRetriever] Seed data directory contains zero JSON files: ${dataDir}`);
+    return false;
+  }
+
   console.log(`[legalRetriever] Auto-seeding LegalKnowledgeChunk store from ${files.length} seed dataset(s)…`);
 
   for (const file of files) {
@@ -53,12 +63,17 @@ async function autoSeedKnowledgeStore() {
 
       await upsertChunks(chunksWithEmbeddings);
     } catch (err) {
-      console.warn(`[legalRetriever] Auto-seed warning for ${file}:`, err.message);
+      console.error(`[legalRetriever] Auto-seed failed for ${file}:`, err.message);
+      const seedErr = new Error(`Legal knowledge auto-seeding failed for ${file}: ${err.message}`);
+      seedErr.code = "AUTO_SEED_FAILED";
+      seedErr.cause = err;
+      throw seedErr;
     }
   }
 
   const count = await LegalKnowledgeChunk.countDocuments();
   console.log(`[legalRetriever] Auto-seeding complete. Total chunks in DB: ${count}.`);
+  return true;
 }
 
 function buildRetrievalQuery(intake) {
@@ -105,22 +120,34 @@ async function retrieve(intake, opts = {}) {
   auditLog("[Legal RAG] START");
 
   // 1. Check DB count, auto-seed if empty
+  let docCount;
   try {
-    let docCount = await LegalKnowledgeChunk.countDocuments();
-    if (docCount === 0) {
-      console.warn("[legalRetriever] Store empty in MongoDB. Attempting auto-seeding…");
-      await autoSeedKnowledgeStore();
+    docCount = await LegalKnowledgeChunk.countDocuments();
+  } catch (dbErr) {
+    console.error("[legalRetriever] Database check failed:", dbErr.message);
+    auditLog("[Legal RAG] Final result status: FAILED (DATABASE_ERROR)");
+    return { status: "FAILED", sources: [] };
+  }
+
+  if (docCount === 0) {
+    console.warn("[legalRetriever] Store empty in MongoDB. Attempting auto-seeding…");
+    const hasSeedData = await autoSeedKnowledgeStore();
+    if (!hasSeedData) {
+      auditLog("[Legal RAG] Final result status: NOT_CONFIGURED");
+      return { status: "NOT_CONFIGURED", sources: [] };
+    }
+
+    try {
       docCount = await LegalKnowledgeChunk.countDocuments();
+    } catch (dbErr) {
+      console.error("[legalRetriever] Post-seed database check failed:", dbErr.message);
+      return { status: "FAILED", sources: [] };
     }
 
     if (docCount === 0) {
       auditLog("[Legal RAG] Final result status: NOT_CONFIGURED");
       return { status: "NOT_CONFIGURED", sources: [] };
     }
-  } catch (dbErr) {
-    console.error("[legalRetriever] Database check failed:", dbErr.message);
-    auditLog("[Legal RAG] Final result status: FAILED (DATABASE_ERROR)");
-    return { status: "FAILED", sources: [] };
   }
 
   // 2. Build search query

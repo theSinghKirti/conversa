@@ -67,6 +67,23 @@ describe("legalRetriever", () => {
     expect(similaritySearch).not.toHaveBeenCalled();
   });
 
+  test("re-throws error upward with code AUTO_SEED_FAILED when auto-seeding embedding fails", async () => {
+    LegalKnowledgeChunk.countDocuments.mockResolvedValue(0);
+    embedText.mockRejectedValue(new Error("Gemini quota exceeded during auto-seeding"));
+
+    let thrownError;
+    try {
+      await retrieve(intake);
+    } catch (err) {
+      thrownError = err;
+    }
+
+    expect(thrownError).toBeDefined();
+    expect(thrownError.message).toContain("Legal knowledge auto-seeding failed for");
+    expect(thrownError.message).toContain("Gemini quota exceeded during auto-seeding");
+    expect(thrownError.code).toBe("AUTO_SEED_FAILED");
+  });
+
   test("returns FAILED when similaritySearch throws database error", async () => {
     LegalKnowledgeChunk.countDocuments.mockResolvedValue(10);
     embedText.mockResolvedValue(new Array(768).fill(0.01));
@@ -74,14 +91,6 @@ describe("legalRetriever", () => {
 
     const result = await retrieve(intake);
     expect(result.status).toBe("FAILED");
-    expect(result.sources).toEqual([]);
-  });
-
-  test("returns NOT_CONFIGURED when document count is 0 even after auto-seed attempt", async () => {
-    LegalKnowledgeChunk.countDocuments.mockResolvedValue(0);
-
-    const result = await retrieve(intake);
-    expect(result.status).toBe("NOT_CONFIGURED");
     expect(result.sources).toEqual([]);
   });
 });
