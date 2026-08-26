@@ -74,12 +74,28 @@ const LegalKnowledgeChunkSchema = new mongoose.Schema(
       default: 1,
     },
 
-    // Text embedding vector — 768-dim from Google text-embedding-004
+    // Text embedding vector
     // Stored as plain Number array; cosine similarity computed in aggregation
     embedding: {
       type: [Number],
       required: true,
       select: false, // exclude from normal queries to reduce payload size
+    },
+
+    // Optional embedding metadata for ingested vectors
+    embeddingModel: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    embeddingProvider: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    embeddingDimensions: {
+      type: Number,
+      default: null,
     },
   },
   {

@@ -84,7 +84,19 @@ describe("legalRetriever", () => {
     expect(thrownError.code).toBe("AUTO_SEED_FAILED");
   });
 
-  test("returns FAILED when similaritySearch throws database error", async () => {
+  test("re-throws error upward when similaritySearch throws EMBEDDING_DIMENSION_MISMATCH", async () => {
+    LegalKnowledgeChunk.countDocuments.mockResolvedValue(10);
+    embedText.mockResolvedValue(new Array(768).fill(0.01));
+    const mismatchErr = new Error("Embedding dimension mismatch: query vector has dimension 768, but stored chunk has dimension 1024.");
+    mismatchErr.code = "EMBEDDING_DIMENSION_MISMATCH";
+    similaritySearch.mockRejectedValue(mismatchErr);
+
+    await expect(retrieve(intake)).rejects.toThrow(
+      "Embedding dimension mismatch: query vector has dimension 768, but stored chunk has dimension 1024."
+    );
+  });
+
+  test("returns FAILED when similaritySearch throws generic database error", async () => {
     LegalKnowledgeChunk.countDocuments.mockResolvedValue(10);
     embedText.mockResolvedValue(new Array(768).fill(0.01));
     similaritySearch.mockRejectedValue(new Error("Mongo connection timeout"));

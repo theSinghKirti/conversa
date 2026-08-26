@@ -1,16 +1,29 @@
 const { GoogleGenAI } = require("@google/genai");
 const secrets = require("../../secrets.js");
-const { GEMINI_API_KEY, GEMINI_MODEL } = secrets;
 
 /**
- * Lazy-initialized Gemini client — same pattern used across the app.
+ * Lazy-initialized Gemini client.
  */
 let ai;
-const getGeminiClient = () => {
-  const apiKey = process.env.GEMINI_API_KEY || GEMINI_API_KEY;
-  if (!apiKey) return null;
-  if (!ai) ai = new GoogleGenAI({ apiKey });
+let cachedGeminiKey;
+
+const getGeminiClient = (apiKey) => {
+  const key =
+    apiKey ||
+    (process.env.GEMINI_API_KEY !== undefined
+      ? process.env.GEMINI_API_KEY
+      : secrets.GEMINI_API_KEY);
+  if (!key || typeof key !== "string" || key.trim().length === 0) return null;
+  if (!ai || cachedGeminiKey !== key) {
+    ai = new GoogleGenAI({ apiKey: key.trim() });
+    cachedGeminiKey = key;
+  }
   return ai;
+};
+
+const _resetClient = () => {
+  ai = null;
+  cachedGeminiKey = null;
 };
 
 /**
@@ -120,7 +133,7 @@ Return ONLY the raw JSON object.`;
 }
 
 /**
- * Parses Gemini's JSON response cleanly.
+ * Parses the JSON response cleanly.
  *
  * @param {string} raw
  * @returns {object}
@@ -141,12 +154,13 @@ function parseDrafterResponse(raw) {
     if (process.env.NODE_ENV !== "production") {
       console.error("[LegalDrafterAgent] Raw output:", raw);
     }
-    throw new Error("Unable to process your legal advisory right now. Please try again.");
+    throw new Error("Unable to parse structured legal advisory response from AI provider.");
   }
 }
 
 /**
  * Deterministic fallback legal advisory drafter.
+ * Exported for backward compatibility / testing purposes only.
  */
 function generateFallbackDrafter(query, intake, retrievedSources = [], precedents = []) {
   const { caseType, legalDomain, jurisdiction, summary } = intake;
@@ -222,25 +236,51 @@ function generateFallbackDrafter(query, intake, retrievedSources = [], precedent
 async function runDrafter(query, intake, retrievedSources = [], precedents = []) {
   const prompt = buildDrafterPrompt(query, intake, retrievedSources, precedents);
 
+  const rawGroqKey =
+    process.env.GROQ_API_KEY !== undefined
+      ? process.env.GROQ_API_KEY
+      : secrets.GROQ_API_KEY;
+  const groqKey = typeof rawGroqKey === "string" ? rawGroqKey.trim() : "";
+  const isGroqConfigured = groqKey.length > 0;
+
+  const rawGeminiKey =
+    process.env.GEMINI_API_KEY !== undefined
+      ? process.env.GEMINI_API_KEY
+      : secrets.GEMINI_API_KEY;
+  const geminiKey = typeof rawGeminiKey === "string" ? rawGeminiKey.trim() : "";
+  const isGeminiConfigured = geminiKey.length > 0;
+
+  if (!isGroqConfigured && !isGeminiConfigured) {
+    const configErr = new Error("No AI generation provider is configured.");
+    configErr.code = "AI_PROVIDER_NOT_CONFIGURED";
+    throw configErr;
+  }
+
+  const failureReasons = [];
+
   // 1. Try Groq if configured
-  const groqKey = process.env.GROQ_API_KEY || secrets.GROQ_API_KEY;
-  if (groqKey && typeof groqKey === "string" && groqKey.trim().length > 0) {
+  if (isGroqConfigured) {
     try {
       console.log("[LegalDrafterAgent] Calling Groq with response_format: json_object...");
-      const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${groqKey.trim()}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: process.env.GROQ_MODEL || secrets.GROQ_MODEL || "llama-3.3-70b-versatile",
-          messages: [{ role: "user", content: prompt }],
-          temperature: 0.3,
-          response_format: { type: "json_object" },
-          max_tokens: 2048,
-        }),
-      });
+      const groqModel =
+        process.env.GROQ_MODEL || secrets.GROQ_MODEL || "llama-3.3-70b-versatile";
+      const groqResponse = await fetch(
+        "https://api.groq.com/openai/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${groqKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: groqModel,
+            messages: [{ role: "user", content: prompt }],
+            temperature: 0.3,
+            response_format: { type: "json_object" },
+            max_tokens: 2048,
+          }),
+        }
+      );
 
       if (groqResponse.ok) {
         const data = await groqResponse.json();
@@ -248,60 +288,129 @@ async function runDrafter(query, intake, retrievedSources = [], precedents = [])
         if (rawText) {
           const parsed = parseDrafterResponse(rawText);
           return {
-            issueIdentified: typeof parsed.issueIdentified === "string" ? parsed.issueIdentified.trim() : "",
-            generalLegalContext: typeof parsed.generalLegalContext === "string" ? parsed.generalLegalContext.trim() : "",
-            relevantLegalInformation: Array.isArray(parsed.relevantLegalInformation) ? parsed.relevantLegalInformation : [],
-            possibleNextSteps: Array.isArray(parsed.possibleNextSteps) ? parsed.possibleNextSteps.filter(Boolean).map(String) : [],
-            documentsToGather: Array.isArray(parsed.documentsToGather) ? parsed.documentsToGather.filter(Boolean).map(String) : [],
-            limitationsAndUncertainty: typeof parsed.limitationsAndUncertainty === "string" ? parsed.limitationsAndUncertainty.trim() : "",
-            disclaimer: typeof parsed.disclaimer === "string" ? parsed.disclaimer.trim() : "This information is generated by AI for general informational purposes only and does not constitute professional legal advice.",
+            issueIdentified:
+              typeof parsed.issueIdentified === "string"
+                ? parsed.issueIdentified.trim()
+                : "",
+            generalLegalContext:
+              typeof parsed.generalLegalContext === "string"
+                ? parsed.generalLegalContext.trim()
+                : "",
+            relevantLegalInformation: Array.isArray(
+              parsed.relevantLegalInformation
+            )
+              ? parsed.relevantLegalInformation
+              : [],
+            possibleNextSteps: Array.isArray(parsed.possibleNextSteps)
+              ? parsed.possibleNextSteps.filter(Boolean).map(String)
+              : [],
+            documentsToGather: Array.isArray(parsed.documentsToGather)
+              ? parsed.documentsToGather.filter(Boolean).map(String)
+              : [],
+            limitationsAndUncertainty:
+              typeof parsed.limitationsAndUncertainty === "string"
+                ? parsed.limitationsAndUncertainty.trim()
+                : "",
+            disclaimer:
+              typeof parsed.disclaimer === "string"
+                ? parsed.disclaimer.trim()
+                : "This information is generated by AI for general informational purposes only and does not constitute professional legal advice.",
           };
         }
+        failureReasons.push("Groq returned empty content");
       } else {
-        console.warn(`[LegalDrafterAgent] Groq returned status ${groqResponse.status}`);
+        const errText = await groqResponse.text().catch(() => "");
+        console.warn(
+          `[LegalDrafterAgent] Groq request failed (${groqResponse.status})`
+        );
+        failureReasons.push(
+          `Groq HTTP ${groqResponse.status}: ${
+            errText.slice(0, 80) || groqResponse.statusText
+          }`
+        );
       }
     } catch (groqErr) {
       console.warn("[LegalDrafterAgent] Groq API call failed:", groqErr.message);
+      failureReasons.push(`Groq: ${groqErr.message}`);
     }
   }
 
   // 2. Try Gemini if configured
-  const client = getGeminiClient();
-  if (client) {
+  if (isGeminiConfigured) {
     try {
-      console.log("[LegalDrafterAgent] Calling Gemini with responseMimeType: application/json...");
-      const response = await client.models.generateContent({
-        model: GEMINI_MODEL,
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        config: {
-          responseMimeType: "application/json",
-          temperature: 0.3,
-          maxOutputTokens: 2048,
-        },
-      });
+      const client = getGeminiClient(geminiKey);
+      if (!client) {
+        failureReasons.push("Gemini client initialization failed");
+      } else {
+        console.log(
+          "[LegalDrafterAgent] Calling Gemini with responseMimeType: application/json..."
+        );
+        const geminiModel =
+          process.env.GEMINI_MODEL ||
+          secrets.GEMINI_MODEL ||
+          "gemini-3-flash-preview";
+        const response = await client.models.generateContent({
+          model: geminiModel,
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          config: {
+            responseMimeType: "application/json",
+            temperature: 0.3,
+            maxOutputTokens: 2048,
+          },
+        });
 
-      const rawText = response?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-      if (rawText) {
-        const parsed = parseDrafterResponse(rawText);
-        return {
-          issueIdentified: typeof parsed.issueIdentified === "string" ? parsed.issueIdentified.trim() : "",
-          generalLegalContext: typeof parsed.generalLegalContext === "string" ? parsed.generalLegalContext.trim() : "",
-          relevantLegalInformation: Array.isArray(parsed.relevantLegalInformation) ? parsed.relevantLegalInformation : [],
-          possibleNextSteps: Array.isArray(parsed.possibleNextSteps) ? parsed.possibleNextSteps.filter(Boolean).map(String) : [],
-          documentsToGather: Array.isArray(parsed.documentsToGather) ? parsed.documentsToGather.filter(Boolean).map(String) : [],
-          limitationsAndUncertainty: typeof parsed.limitationsAndUncertainty === "string" ? parsed.limitationsAndUncertainty.trim() : "",
-          disclaimer: typeof parsed.disclaimer === "string" ? parsed.disclaimer.trim() : "This information is generated by AI for general informational purposes only and does not constitute professional legal advice.",
-        };
+        const rawText =
+          response?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+        if (rawText) {
+          const parsed = parseDrafterResponse(rawText);
+          return {
+            issueIdentified:
+              typeof parsed.issueIdentified === "string"
+                ? parsed.issueIdentified.trim()
+                : "",
+            generalLegalContext:
+              typeof parsed.generalLegalContext === "string"
+                ? parsed.generalLegalContext.trim()
+                : "",
+            relevantLegalInformation: Array.isArray(
+              parsed.relevantLegalInformation
+            )
+              ? parsed.relevantLegalInformation
+              : [],
+            possibleNextSteps: Array.isArray(parsed.possibleNextSteps)
+              ? parsed.possibleNextSteps.filter(Boolean).map(String)
+              : [],
+            documentsToGather: Array.isArray(parsed.documentsToGather)
+              ? parsed.documentsToGather.filter(Boolean).map(String)
+              : [],
+            limitationsAndUncertainty:
+              typeof parsed.limitationsAndUncertainty === "string"
+                ? parsed.limitationsAndUncertainty.trim()
+                : "",
+            disclaimer:
+              typeof parsed.disclaimer === "string"
+                ? parsed.disclaimer.trim()
+                : "This information is generated by AI for general informational purposes only and does not constitute professional legal advice.",
+          };
+        }
+        failureReasons.push("Gemini returned empty content");
       }
-      console.warn("[LegalDrafterAgent] Empty response from Gemini.");
-    } catch (err) {
-      console.warn("[LegalDrafterAgent] Gemini API unavailable or quota exceeded:", err.message);
+    } catch (geminiErr) {
+      console.warn(
+        "[LegalDrafterAgent] Gemini API call failed:",
+        geminiErr.message
+      );
+      failureReasons.push(`Gemini: ${geminiErr.message}`);
     }
   }
 
-  // 3. Fallback to offline deterministic drafter
-  console.warn("[LegalDrafterAgent] AI providers unavailable — using deterministic offline advisory drafter.");
-  return generateFallbackDrafter(query, intake, retrievedSources, precedents);
+  const aiError = new Error(
+    `Legal Advisory Drafter failed across all configured AI providers: ${failureReasons.join(
+      "; "
+    )}`
+  );
+  aiError.code = "AI_GENERATION_FAILED";
+  throw aiError;
 }
 
-module.exports = { runDrafter, generateFallbackDrafter };
+module.exports = { runDrafter, generateFallbackDrafter, _resetClient };

@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const LegalKnowledgeChunk = require("../../../Models/LegalKnowledgeChunk.js");
-const { embedText } = require("./embeddingService.js");
+const { embedText, getActiveProvider } = require("./embeddingService.js");
 const { similaritySearch, upsertChunks } = require("./vectorStore.js");
 const { processDocument } = require("./documentProcessor.js");
 const {
@@ -46,6 +46,13 @@ async function autoSeedKnowledgeStore() {
     return false;
   }
 
+  let activeProvider = null;
+  try {
+    activeProvider = typeof getActiveProvider === "function" ? getActiveProvider() : null;
+  } catch (_err) {
+    activeProvider = null;
+  }
+
   console.log(`[legalRetriever] Auto-seeding LegalKnowledgeChunk store from ${files.length} seed dataset(s)…`);
 
   for (const file of files) {
@@ -58,7 +65,13 @@ async function autoSeedKnowledgeStore() {
       for (const chunk of chunks) {
         const textToEmbed = `${chunk.title} ${chunk.legalDomain} ${chunk.content}`;
         const embedding = await embedText(textToEmbed);
-        chunksWithEmbeddings.push({ ...chunk, embedding });
+        chunksWithEmbeddings.push({
+          ...chunk,
+          embedding,
+          embeddingProvider: activeProvider?.provider || "gemini",
+          embeddingModel: activeProvider?.model || "gemini-embedding-001",
+          embeddingDimensions: Array.isArray(embedding) ? embedding.length : null,
+        });
       }
 
       await upsertChunks(chunksWithEmbeddings);
@@ -247,6 +260,9 @@ async function retrieve(intake, opts = {}) {
     }
   } catch (searchErr) {
     console.error("[legalRetriever] Vector aggregation failed:", searchErr.message);
+    if (searchErr.code === "EMBEDDING_DIMENSION_MISMATCH") {
+      throw searchErr;
+    }
     return { status: "FAILED", sources: [] };
   }
 

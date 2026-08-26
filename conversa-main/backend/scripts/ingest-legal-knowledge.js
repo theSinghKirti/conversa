@@ -10,7 +10,7 @@ const { resolveMongoConnection } = require("./mongoConnectionConfig.js");
 const { mongoUri, dbName } = resolveMongoConnection({ allowLocalFallback: true });
 
 const { processDocument } = require("../services/legalAdvisory/rag/documentProcessor.js");
-const { embedBatch } = require("../services/legalAdvisory/rag/embeddingService.js");
+const { embedBatch, getActiveProvider } = require("../services/legalAdvisory/rag/embeddingService.js");
 const { upsertChunks, deleteBySource, getStats } = require("../services/legalAdvisory/rag/vectorStore.js");
 
 /**
@@ -88,14 +88,18 @@ async function runIngestion() {
       }
 
       // 3. Generate embeddings
-      console.log(`  -> Generating text-embedding-004 vectors (with 200ms rate-limiting delay)…`);
+      const activeProvider = getActiveProvider();
+      console.log(`  -> Generating ${activeProvider.provider} (${activeProvider.model}, ${activeProvider.expectedDims} dims) vectors…`);
       const textsToEmbed = chunks.map((c) => `${c.title}. ${c.content}`);
       const embeddings = await embedBatch(textsToEmbed, { delayMs: 200 });
 
-      // 4. Attach embeddings to chunks
+      // 4. Attach embeddings and metadata to chunks
       const chunksWithEmbeddings = chunks.map((chunk, index) => ({
         ...chunk,
         embedding: embeddings[index],
+        embeddingProvider: activeProvider.provider,
+        embeddingModel: activeProvider.model,
+        embeddingDimensions: embeddings[index].length,
       }));
 
       // 5. Upsert to vector store

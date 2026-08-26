@@ -115,9 +115,76 @@ async function upsertChunks(chunks) {
 }
 
 /**
+ * Validates that stored LegalKnowledgeChunk embeddings are compatible with the query vector dimension.
+ * Checks both metadata (embeddingDimensions) and the actual embedding array size ($size: "$embedding")
+ * for chunks matching the retrieval filter.
+ *
+ * @param {number} expectedDimension
+ * @param {object} [matchFilter]
+ * @throws {Error} with code EMBEDDING_DIMENSION_MISMATCH if any mismatch is found.
+ */
+async function validateStoredEmbeddingDimensions(expectedDimension, matchFilter = {}) {
+  if (typeof expectedDimension !== "number" || expectedDimension <= 0) {
+    throw new Error(`vectorStore: Invalid expected dimension: ${expectedDimension}`);
+  }
+
+  const mismatchDocs = await LegalKnowledgeChunk.aggregate([
+    ...(Object.keys(matchFilter).length ? [{ $match: matchFilter }] : []),
+    {
+      $project: {
+        chunkId: 1,
+        title: 1,
+        embeddingDimensions: 1,
+        actualLength: {
+          $cond: {
+            if: { $isArray: "$embedding" },
+            then: { $size: "$embedding" },
+            else: 0,
+          },
+        },
+      },
+    },
+    {
+      $match: {
+        $or: [
+          { actualLength: { $ne: expectedDimension } },
+          {
+            $and: [
+              { embeddingDimensions: { $exists: true, $ne: null } },
+              { embeddingDimensions: { $ne: expectedDimension } },
+            ],
+          },
+        ],
+      },
+    },
+    { $limit: 1 },
+  ]);
+
+  if (mismatchDocs.length > 0) {
+    const mismatch = mismatchDocs[0];
+    const detectedDim =
+      mismatch.actualLength !== undefined && mismatch.actualLength !== expectedDimension
+        ? mismatch.actualLength
+        : mismatch.embeddingDimensions !== undefined &&
+          mismatch.embeddingDimensions !== null &&
+          mismatch.embeddingDimensions !== expectedDimension
+        ? mismatch.embeddingDimensions
+        : null;
+
+    if (detectedDim !== null) {
+      const err = new Error(
+        `Embedding dimension mismatch: query vector has dimension ${expectedDimension}, but stored chunk "${mismatch.chunkId || "unknown"}" has dimension ${detectedDim}.`
+      );
+      err.code = "EMBEDDING_DIMENSION_MISMATCH";
+      throw err;
+    }
+  }
+}
+
+/**
  * Perform cosine similarity search against the stored embeddings.
  *
- * @param {number[]} queryVec          — 768-dim query embedding
+ * @param {number[]} queryVec          — Query embedding vector
  * @param {{
  *   jurisdiction?: string,
  *   legalDomain?: string,
@@ -136,6 +203,11 @@ async function upsertChunks(chunks) {
  * }>>}
  */
 async function similaritySearch(queryVec, opts = {}) {
+  if (!Array.isArray(queryVec) || queryVec.length === 0) {
+    throw new Error("vectorStore: query vector must be a non-empty array of numbers.");
+  }
+  const expectedDimension = queryVec.length;
+
   const {
     jurisdiction,
     legalDomain,
@@ -156,6 +228,9 @@ async function similaritySearch(queryVec, opts = {}) {
       matchStage.legalDomain = legalDomain;
     }
   }
+
+  // 1. Validate vector dimensions of stored candidate chunks before computing cosine similarity
+  await validateStoredEmbeddingDimensions(expectedDimension, matchStage);
 
   const pipeline = [
     // 1. Pre-filter by jurisdiction/domain before computing similarity
@@ -247,4 +322,10 @@ async function getStats() {
   return { totalChunks: total, byDomain };
 }
 
-module.exports = { upsertChunks, similaritySearch, deleteBySource, getStats };
+module.exports = {
+  upsertChunks,
+  similaritySearch,
+  validateStoredEmbeddingDimensions,
+  deleteBySource,
+  getStats,
+};
