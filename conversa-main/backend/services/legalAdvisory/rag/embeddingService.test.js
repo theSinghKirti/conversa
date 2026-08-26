@@ -1,7 +1,13 @@
 "use strict";
 
 const { GoogleGenAI } = require("@google/genai");
-const { embedText, embedBatch, EMBEDDING_DIMS, _resetClient } = require("./embeddingService.js");
+const {
+  embedText,
+  embedBatch,
+  EMBEDDING_DIMS,
+  getActiveProvider,
+  _resetClient,
+} = require("./embeddingService.js");
 const secrets = require("../../../secrets.js");
 
 jest.mock("@google/genai");
@@ -9,14 +15,20 @@ jest.mock("@google/genai");
 describe("embeddingService", () => {
   const originalEnvGeminiKey = process.env.GEMINI_API_KEY;
   const originalEnvHfKey = process.env.HUGGINGFACE_API_KEY;
+  const originalEnvProvider = process.env.LEGAL_EMBEDDING_PROVIDER;
   const originalSecretGeminiKey = secrets.GEMINI_API_KEY;
   const originalSecretHfKey = secrets.HUGGINGFACE_API_KEY;
+  const originalSecretProvider = secrets.LEGAL_EMBEDDING_PROVIDER;
 
   let mockEmbedContent;
 
   beforeEach(() => {
     jest.clearAllMocks();
     _resetClient();
+
+    process.env.LEGAL_EMBEDDING_PROVIDER = "gemini";
+    secrets.LEGAL_EMBEDDING_PROVIDER = "gemini";
+
     delete process.env.HUGGINGFACE_API_KEY;
     secrets.HUGGINGFACE_API_KEY = "";
     process.env.GEMINI_API_KEY = "test-gemini-key";
@@ -33,11 +45,58 @@ describe("embeddingService", () => {
   afterAll(() => {
     process.env.GEMINI_API_KEY = originalEnvGeminiKey;
     process.env.HUGGINGFACE_API_KEY = originalEnvHfKey;
+    process.env.LEGAL_EMBEDDING_PROVIDER = originalEnvProvider;
     secrets.GEMINI_API_KEY = originalSecretGeminiKey;
     secrets.HUGGINGFACE_API_KEY = originalSecretHfKey;
+    secrets.LEGAL_EMBEDDING_PROVIDER = originalSecretProvider;
+  });
+
+  describe("Provider configuration validation", () => {
+    test("throws explicit configuration error when LEGAL_EMBEDDING_PROVIDER is missing", () => {
+      delete process.env.LEGAL_EMBEDDING_PROVIDER;
+      secrets.LEGAL_EMBEDDING_PROVIDER = "";
+
+      expect(() => getActiveProvider()).toThrow(
+        "LEGAL_EMBEDDING_PROVIDER must be explicitly set to 'huggingface' or 'gemini'."
+      );
+    });
+
+    test("throws explicit configuration error when LEGAL_EMBEDDING_PROVIDER is invalid", () => {
+      process.env.LEGAL_EMBEDDING_PROVIDER = "openai";
+      secrets.LEGAL_EMBEDDING_PROVIDER = "openai";
+
+      expect(() => getActiveProvider()).toThrow(
+        "LEGAL_EMBEDDING_PROVIDER must be explicitly set to 'huggingface' or 'gemini'."
+      );
+    });
+
+    test("does not automatically select Hugging Face just because HUGGINGFACE_API_KEY exists when provider is gemini", () => {
+      process.env.LEGAL_EMBEDDING_PROVIDER = "gemini";
+      process.env.HUGGINGFACE_API_KEY = "hf_token_123";
+      process.env.GEMINI_API_KEY = "gemini_key_123";
+
+      const provider = getActiveProvider();
+      expect(provider.provider).toBe("gemini");
+      expect(provider.expectedDims).toBe(768);
+    });
+
+    test("does not automatically select Gemini when provider is huggingface", () => {
+      process.env.LEGAL_EMBEDDING_PROVIDER = "huggingface";
+      process.env.HUGGINGFACE_API_KEY = "hf_token_123";
+      process.env.GEMINI_API_KEY = "gemini_key_123";
+
+      const provider = getActiveProvider();
+      expect(provider.provider).toBe("huggingface");
+      expect(provider.expectedDims).toBe(1024);
+    });
   });
 
   describe("embedText (Gemini provider)", () => {
+    beforeEach(() => {
+      process.env.LEGAL_EMBEDDING_PROVIDER = "gemini";
+      secrets.LEGAL_EMBEDDING_PROVIDER = "gemini";
+    });
+
     test("validates that text is a non-empty string", async () => {
       await expect(embedText("")).rejects.toThrow("embedText: text must be a non-empty string.");
       await expect(embedText("   ")).rejects.toThrow("embedText: text must be a non-empty string.");
@@ -46,18 +105,16 @@ describe("embeddingService", () => {
       await expect(embedText({})).rejects.toThrow("embedText: text must be a non-empty string.");
     });
 
-    test("throws explicit error when API keys are missing", async () => {
+    test("throws explicit provider-specific error when GEMINI_API_KEY is missing", async () => {
       delete process.env.GEMINI_API_KEY;
       secrets.GEMINI_API_KEY = "";
-      delete process.env.HUGGINGFACE_API_KEY;
-      secrets.HUGGINGFACE_API_KEY = "";
 
       await expect(embedText("Legal dispute query")).rejects.toThrow(
         "Embedding provider unavailable: GEMINI_API_KEY is missing."
       );
     });
 
-    test("successfully embeds text using text-embedding-004 and returns 768-dim array", async () => {
+    test("successfully embeds text using gemini-embedding-001 and returns 768-dim array", async () => {
       const mockVector = new Array(768).fill(0.0123);
       mockEmbedContent.mockResolvedValueOnce({
         embeddings: [{ values: mockVector }],
@@ -95,7 +152,6 @@ describe("embeddingService", () => {
     });
 
     test("throws explicit error with actual and expected dims when embedding shape is invalid", async () => {
-      // Returned vector has wrong length (e.g. 512)
       mockEmbedContent.mockResolvedValueOnce({
         embeddings: [{ values: new Array(512).fill(0.1) }],
       });
@@ -104,7 +160,6 @@ describe("embeddingService", () => {
         "Embedding response shape invalid: expected an array with 768 values, received 512."
       );
 
-      // Returned values is not an array (null / empty)
       mockEmbedContent.mockResolvedValueOnce({
         embeddings: [{ values: null }],
       });
@@ -119,6 +174,8 @@ describe("embeddingService", () => {
     const originalFetch = global.fetch;
 
     beforeEach(() => {
+      process.env.LEGAL_EMBEDDING_PROVIDER = "huggingface";
+      secrets.LEGAL_EMBEDDING_PROVIDER = "huggingface";
       process.env.HUGGINGFACE_API_KEY = "hf_test_token";
       secrets.HUGGINGFACE_API_KEY = "hf_test_token";
       global.fetch = jest.fn();
@@ -126,6 +183,15 @@ describe("embeddingService", () => {
 
     afterEach(() => {
       global.fetch = originalFetch;
+    });
+
+    test("throws explicit provider-specific error when HUGGINGFACE_API_KEY is missing", async () => {
+      delete process.env.HUGGINGFACE_API_KEY;
+      secrets.HUGGINGFACE_API_KEY = "";
+
+      await expect(embedText("Labour law compliance query")).rejects.toThrow(
+        "Embedding provider unavailable: HUGGINGFACE_API_KEY is missing."
+      );
     });
 
     test("successfully embeds text using Hugging Face 1024-dim BGE-M3 model", async () => {
@@ -167,6 +233,11 @@ describe("embeddingService", () => {
   });
 
   describe("embedBatch", () => {
+    beforeEach(() => {
+      process.env.LEGAL_EMBEDDING_PROVIDER = "gemini";
+      secrets.LEGAL_EMBEDDING_PROVIDER = "gemini";
+    });
+
     test("validates that texts is an array", async () => {
       await expect(embedBatch("not-an-array")).rejects.toThrow("embedBatch: texts must be an array.");
     });

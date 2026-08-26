@@ -6,29 +6,78 @@ const DEFAULT_GEMINI_MODEL = "gemini-embedding-001";
 
 let ai;
 let cachedApiKey;
+let lastLoggedConfig = null;
 
+function logProviderConfig(config) {
+  const configKey = `${config.provider}:${config.model}:${config.expectedDims}`;
+  if (lastLoggedConfig !== configKey) {
+    lastLoggedConfig = configKey;
+    console.log(
+      `[EmbeddingService] Provider: ${config.provider}, Model: ${config.model}, Expected Dimensions: ${config.expectedDims}`
+    );
+  }
+}
+
+/**
+ * Resolves the active embedding provider based explicitly on LEGAL_EMBEDDING_PROVIDER.
+ *
+ * @returns {{ provider: "huggingface"|"gemini", apiKey: string, model: string, expectedDims: number }}
+ */
 const getActiveProvider = () => {
-  const hfKey = process.env.HUGGINGFACE_API_KEY || secrets.HUGGINGFACE_API_KEY || process.env.HF_TOKEN;
-  if (hfKey && typeof hfKey === "string" && hfKey.trim().length > 0) {
-    return {
-      provider: "huggingface",
-      apiKey: hfKey.trim(),
-      model: process.env.HUGGINGFACE_EMBEDDING_MODEL || secrets.HUGGINGFACE_EMBEDDING_MODEL || DEFAULT_HF_MODEL,
-      expectedDims: 1024,
-    };
+  const rawProvider = (
+    process.env.LEGAL_EMBEDDING_PROVIDER ||
+    secrets.LEGAL_EMBEDDING_PROVIDER ||
+    ""
+  )
+    .trim()
+    .toLowerCase();
+
+  if (!rawProvider || (rawProvider !== "huggingface" && rawProvider !== "gemini")) {
+    throw new Error("LEGAL_EMBEDDING_PROVIDER must be explicitly set to 'huggingface' or 'gemini'.");
   }
 
-  const geminiKey = process.env.GEMINI_API_KEY || secrets.GEMINI_API_KEY;
-  if (geminiKey && typeof geminiKey === "string" && geminiKey.trim().length > 0) {
-    return {
+  if (rawProvider === "huggingface") {
+    const hfKey =
+      process.env.HUGGINGFACE_API_KEY ||
+      secrets.HUGGINGFACE_API_KEY ||
+      process.env.HF_TOKEN;
+
+    if (!hfKey || typeof hfKey !== "string" || hfKey.trim().length === 0) {
+      throw new Error("Embedding provider unavailable: HUGGINGFACE_API_KEY is missing.");
+    }
+
+    const model =
+      process.env.HUGGINGFACE_EMBEDDING_MODEL ||
+      secrets.HUGGINGFACE_EMBEDDING_MODEL ||
+      DEFAULT_HF_MODEL;
+
+    const config = {
+      provider: "huggingface",
+      apiKey: hfKey.trim(),
+      model,
+      expectedDims: 1024,
+    };
+    logProviderConfig(config);
+    return config;
+  }
+
+  if (rawProvider === "gemini") {
+    const geminiKey = process.env.GEMINI_API_KEY || secrets.GEMINI_API_KEY;
+    if (!geminiKey || typeof geminiKey !== "string" || geminiKey.trim().length === 0) {
+      throw new Error("Embedding provider unavailable: GEMINI_API_KEY is missing.");
+    }
+
+    const config = {
       provider: "gemini",
       apiKey: geminiKey.trim(),
       model: DEFAULT_GEMINI_MODEL,
       expectedDims: 768,
     };
+    logProviderConfig(config);
+    return config;
   }
 
-  return { provider: "none", apiKey: null, model: null, expectedDims: 768 };
+  throw new Error("LEGAL_EMBEDDING_PROVIDER must be explicitly set to 'huggingface' or 'gemini'.");
 };
 
 const getGeminiClient = (apiKey) => {
@@ -42,6 +91,7 @@ const getGeminiClient = (apiKey) => {
 const _resetClient = () => {
   ai = null;
   cachedApiKey = null;
+  lastLoggedConfig = null;
 };
 
 function validateEmbeddingValues(values, expectedDims) {
@@ -64,7 +114,7 @@ function validateEmbeddingValues(values, expectedDims) {
 }
 
 /**
- * Embed a single text string using the active configured provider.
+ * Embed a single text string using the explicitly configured provider.
  *
  * @param {string} text
  * @returns {Promise<number[]>} — Dense embedding vector
@@ -123,7 +173,7 @@ async function embedText(text) {
     return validateEmbeddingValues(values, active.expectedDims);
   }
 
-  throw new Error("Embedding provider unavailable: GEMINI_API_KEY is missing.");
+  throw new Error("LEGAL_EMBEDDING_PROVIDER must be explicitly set to 'huggingface' or 'gemini'.");
 }
 
 /**
@@ -153,4 +203,11 @@ async function embedBatch(texts, { delayMs = 150 } = {}) {
 
 const EMBEDDING_DIMS = 768;
 
-module.exports = { embedText, embedBatch, EMBEDDING_DIMS, getActiveProvider, _resetClient };
+module.exports = {
+  embedText,
+  embedBatch,
+  EMBEDDING_DIMS,
+  validateEmbeddingValues,
+  getActiveProvider,
+  _resetClient,
+};
