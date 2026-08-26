@@ -18,6 +18,15 @@ function logProviderConfig(config) {
   }
 }
 
+function createEmbeddingError(message, code, originalError) {
+  const err = new Error(message);
+  err.code = code;
+  if (originalError && originalError.stack) {
+    err.originalError = originalError;
+  }
+  return err;
+}
+
 /**
  * Resolves the active embedding provider based explicitly on LEGAL_EMBEDDING_PROVIDER.
  *
@@ -33,7 +42,10 @@ const getActiveProvider = () => {
     .toLowerCase();
 
   if (!rawProvider || (rawProvider !== "huggingface" && rawProvider !== "gemini")) {
-    throw new Error("LEGAL_EMBEDDING_PROVIDER must be explicitly set to 'huggingface' or 'gemini'.");
+    throw createEmbeddingError(
+      "LEGAL_EMBEDDING_PROVIDER must be explicitly set to 'huggingface' or 'gemini'.",
+      "EMBEDDING_CONFIG_ERROR"
+    );
   }
 
   if (rawProvider === "huggingface") {
@@ -43,7 +55,10 @@ const getActiveProvider = () => {
       process.env.HF_TOKEN;
 
     if (!hfKey || typeof hfKey !== "string" || hfKey.trim().length === 0) {
-      throw new Error("Embedding provider unavailable: HUGGINGFACE_API_KEY is missing.");
+      throw createEmbeddingError(
+        "Embedding provider unavailable: HUGGINGFACE_API_KEY is missing.",
+        "EMBEDDING_CONFIG_ERROR"
+      );
     }
 
     const model =
@@ -64,7 +79,10 @@ const getActiveProvider = () => {
   if (rawProvider === "gemini") {
     const geminiKey = process.env.GEMINI_API_KEY || secrets.GEMINI_API_KEY;
     if (!geminiKey || typeof geminiKey !== "string" || geminiKey.trim().length === 0) {
-      throw new Error("Embedding provider unavailable: GEMINI_API_KEY is missing.");
+      throw createEmbeddingError(
+        "Embedding provider unavailable: GEMINI_API_KEY is missing.",
+        "EMBEDDING_CONFIG_ERROR"
+      );
     }
 
     const config = {
@@ -77,7 +95,10 @@ const getActiveProvider = () => {
     return config;
   }
 
-  throw new Error("LEGAL_EMBEDDING_PROVIDER must be explicitly set to 'huggingface' or 'gemini'.");
+  throw createEmbeddingError(
+    "LEGAL_EMBEDDING_PROVIDER must be explicitly set to 'huggingface' or 'gemini'.",
+    "EMBEDDING_CONFIG_ERROR"
+  );
 };
 
 const getGeminiClient = (apiKey) => {
@@ -105,8 +126,9 @@ function validateEmbeddingValues(values, expectedDims) {
 
   const dims = expectedDims || 768;
   if (!Array.isArray(values) || values.length !== dims) {
-    throw new Error(
-      `Embedding response shape invalid: expected an array with ${dims} values, received ${actualDims}.`
+    throw createEmbeddingError(
+      `Embedding response shape invalid: expected an array with ${dims} values, received ${actualDims}.`,
+      "EMBEDDING_RESPONSE_INVALID"
     );
   }
 
@@ -121,7 +143,7 @@ function validateEmbeddingValues(values, expectedDims) {
  */
 async function embedText(text) {
   if (typeof text !== "string" || text.trim().length === 0) {
-    throw new Error("embedText: text must be a non-empty string.");
+    throw createEmbeddingError("embedText: text must be a non-empty string.", "EMBEDDING_CONFIG_ERROR");
   }
 
   const active = getActiveProvider();
@@ -139,12 +161,19 @@ async function embedText(text) {
         body: JSON.stringify({ inputs: text.trim() }),
       });
     } catch (netErr) {
-      throw new Error(`Hugging Face embedding network error: ${netErr.message}`);
+      throw createEmbeddingError(
+        `Hugging Face embedding network error: ${netErr.message}`,
+        "EMBEDDING_PROVIDER_ERROR",
+        netErr
+      );
     }
 
     if (!response.ok) {
       const errBody = await response.text().catch(() => "");
-      throw new Error(`Hugging Face embedding request failed (${response.status}): ${errBody || response.statusText}`);
+      throw createEmbeddingError(
+        `Hugging Face embedding request failed (${response.status}): ${errBody || response.statusText}`,
+        "EMBEDDING_PROVIDER_ERROR"
+      );
     }
 
     const data = await response.json();
@@ -163,7 +192,11 @@ async function embedText(text) {
         config: { outputDimensionality: 768 },
       });
     } catch (err) {
-      throw new Error(`Gemini embedding request failed: ${err?.message || String(err)}`);
+      throw createEmbeddingError(
+        `Gemini embedding request failed: ${err?.message || String(err)}`,
+        "EMBEDDING_PROVIDER_ERROR",
+        err
+      );
     }
 
     const values =
@@ -173,7 +206,10 @@ async function embedText(text) {
     return validateEmbeddingValues(values, active.expectedDims);
   }
 
-  throw new Error("LEGAL_EMBEDDING_PROVIDER must be explicitly set to 'huggingface' or 'gemini'.");
+  throw createEmbeddingError(
+    "LEGAL_EMBEDDING_PROVIDER must be explicitly set to 'huggingface' or 'gemini'.",
+    "EMBEDDING_CONFIG_ERROR"
+  );
 }
 
 /**
@@ -185,14 +221,18 @@ async function embedText(text) {
  */
 async function embedBatch(texts, { delayMs = 150 } = {}) {
   if (!Array.isArray(texts)) {
-    throw new Error("embedBatch: texts must be an array.");
+    throw createEmbeddingError("embedBatch: texts must be an array.", "EMBEDDING_CONFIG_ERROR");
   }
   const results = [];
   for (let i = 0; i < texts.length; i++) {
     try {
       results.push(await embedText(texts[i]));
     } catch (err) {
-      throw new Error(`embedBatch failed for item ${i + 1}/${texts.length}: ${err.message}`);
+      throw createEmbeddingError(
+        `embedBatch failed for item ${i + 1}/${texts.length}: ${err.message}`,
+        err.code || "EMBEDDING_PROVIDER_ERROR",
+        err
+      );
     }
     if (i < texts.length - 1 && delayMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, delayMs));

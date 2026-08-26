@@ -135,7 +135,10 @@ async function retrieve(intake, opts = {}) {
   } catch (err) {
     console.error("[legalRetriever] Query embedding failed:", err.message);
     auditLog("[Legal RAG] Query embedding: FAILED (EMBEDDING_PROVIDER_ERROR)");
-    return { status: "FAILED", sources: [] };
+    if (!err.code) {
+      err.code = "EMBEDDING_FAILED";
+    }
+    throw err;
   }
 
   // 4. Perform 3-pass similarity search with pass metadata tagging

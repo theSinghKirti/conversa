@@ -54,14 +54,16 @@ describe("legalRetriever", () => {
     expect(result.sources).toEqual([]);
   });
 
-  test("returns FAILED when embedding generation fails (e.g. Gemini provider error)", async () => {
+  test("re-throws error upward when query embedding generation fails without continuing to vector search", async () => {
     LegalKnowledgeChunk.countDocuments.mockResolvedValue(10);
-    embedText.mockRejectedValue(new Error("Embedding provider unavailable: GEMINI_API_KEY is missing."));
+    const embeddingError = new Error("Embedding provider unavailable: GEMINI_API_KEY is missing.");
+    embeddingError.code = "EMBEDDING_CONFIG_ERROR";
+    embedText.mockRejectedValue(embeddingError);
 
-    const result = await retrieve(intake);
-    expect(result.status).toBe("FAILED");
-    expect(result.sources).toEqual([]);
-    // Ensure similarity search is NOT called with invalid or missing vector
+    await expect(retrieve(intake)).rejects.toThrow(
+      "Embedding provider unavailable: GEMINI_API_KEY is missing."
+    );
+    // Ensure similarity search is NOT called when query embedding fails
     expect(similaritySearch).not.toHaveBeenCalled();
   });
 
