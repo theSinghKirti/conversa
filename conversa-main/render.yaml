@@ -11,16 +11,34 @@ services:
         value: production
       - key: PORT
         value: 5500
+
+      # ── Database ────────────────────────────────────────────────────────────
       - key: MONGO_URI
         sync: false
       - key: MONGO_DB_NAME
         value: conversa
+
+      # ── Auth ────────────────────────────────────────────────────────────────
       - key: JWT_SECRET
         generateValue: true
+
+      # ── Frontend / CORS ─────────────────────────────────────────────────────
+      # Set FRONTEND_URL to your Vercel URL, e.g. https://conversa-nu-taupe.vercel.app
       - key: FRONTEND_URL
         sync: false
       - key: CORS_ORIGIN
         sync: false
+
+      # ── Email (Brevo Transactional) ─────────────────────────────────────────
+      # Required for OTP and activation emails to work in production.
+      - key: BREVO_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: EMAIL_FROM_NAME
+        value: Conversa
+
+      # ── AI Providers ────────────────────────────────────────────────────────
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL
@@ -33,8 +51,10 @@ services:
         sync: false
       - key: GROQ_MODEL
         value: llama-3.3-70b-versatile
-      # Admin seeding — used ONLY by: npm run seed:admin
-      # DO NOT change startCommand to include this. Run seed:admin manually via Render Shell.
+
+      # ── Admin seeding ───────────────────────────────────────────────────────
+      # On first deploy: auto-seeds admin when no ADMIN user exists in DB.
+      # Safe on all subsequent restarts (skips if admin already present).
       - key: ADMIN_NAME
         sync: false
       - key: ADMIN_EMAIL
