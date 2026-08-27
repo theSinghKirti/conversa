@@ -83,6 +83,47 @@ const start = async () => {
   console.log(`[startup] ADMIN_EMAIL    : ${process.env.ADMIN_EMAIL    ? "configured" : "NOT SET"}`);
   console.log(`[startup] ADMIN_PASSWORD : ${process.env.ADMIN_PASSWORD ? "configured" : "NOT SET"}`);
 
+  // Auto-seed admin on first deploy (when ADMIN_EMAIL + ADMIN_PASSWORD are set
+  // and no admin user exists yet). Safe: skips silently if admin already exists.
+  // Does NOT update existing admins — run scripts/seedAdmin.js manually for that.
+  if (process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD) {
+    try {
+      const bcrypt = require("bcryptjs");
+      const User   = require("./Models/User.js");
+      const normalisedEmail = process.env.ADMIN_EMAIL.trim().toLowerCase();
+      const adminCount = await User.countDocuments({ role: "ADMIN", isDeleted: false });
+
+      if (adminCount === 0) {
+        console.log("[startup] No admin found — auto-seeding admin account...");
+        const hash = await bcrypt.hash(process.env.ADMIN_PASSWORD, 10);
+        await User.findOneAndUpdate(
+          { email: normalisedEmail },
+          {
+            $set: {
+              name:            process.env.ADMIN_NAME || "Admin",
+              email:           normalisedEmail,
+              password:        hash,
+              role:            "ADMIN",
+              accountStatus:   "ACTIVE",
+              authMethod:      "PASSWORD",
+              isEmailVerified: true,
+              isDeleted:       false,
+              about:           "System Administrator",
+              profilePic:      `https://ui-avatars.com/api/?name=${encodeURIComponent(process.env.ADMIN_NAME || "Admin")}&background=random&bold=true`,
+            },
+          },
+          { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
+        console.log(`[startup] ✅ Admin account ready: ${normalisedEmail}`);
+      } else {
+        console.log(`[startup] Admin already exists (${adminCount}). Skipping auto-seed.`);
+      }
+    } catch (seedErr) {
+      // Non-fatal: log and continue — do not crash the server
+      console.error("[startup] ⚠️  Admin auto-seed failed:", seedErr.message);
+    }
+  }
+
   server.listen(PORT, "0.0.0.0", () => {
     console.log(`Server listening on port ${PORT}`);
   });
