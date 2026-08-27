@@ -28,8 +28,16 @@ services:
       - key: HUGGINGFACE_API_KEY
         sync: false
       - key: HUGGINGFACE_EMBEDDING_MODEL
-        value: BAAI/bge-m3
+        value: BAAI/bge-large-en-v1.5
       - key: GROQ_API_KEY
         sync: false
       - key: GROQ_MODEL
         value: llama-3.3-70b-versatile
+      # Admin seeding — used ONLY by: npm run seed:admin
+      # DO NOT change startCommand to include this. Run seed:admin manually via Render Shell.
+      - key: ADMIN_NAME
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false

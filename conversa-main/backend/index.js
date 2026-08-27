@@ -42,6 +42,18 @@ app.get("/", (req, res) => {
 app.get("/health", (req, res) => {
   res.json({ success: true, message: "Server is running" });
 });
+
+// Safe admin existence check — never returns emails, passwords, or tokens.
+// Used to verify seeding without exposing secrets.
+app.get("/admin/ping", async (req, res) => {
+  try {
+    const User = require("./Models/User.js");
+    const count = await User.countDocuments({ role: "ADMIN", isDeleted: false });
+    return res.json({ adminExists: count > 0, adminCount: count });
+  } catch (err) {
+    return res.status(500).json({ adminExists: false, error: "DB query failed" });
+  }
+});
 app.use("/auth", require("./Routes/auth-routes.js"));
 app.use("/user", require("./Routes/user-routes.js"));
 app.use("/message", require("./Routes/message-routes.js"));
@@ -64,6 +76,13 @@ initSocket(server); // Initialize socket.io logic
 const start = async () => {
   validateEnv();
   await connectDB(); // connect first
+
+  // Startup diagnostics — safe: never prints secret values
+  const dbName = process.env.MONGO_DB_NAME || "(not set — using URI default)";
+  console.log(`[startup] Database name  : ${dbName}`);
+  console.log(`[startup] ADMIN_EMAIL    : ${process.env.ADMIN_EMAIL    ? "configured" : "NOT SET"}`);
+  console.log(`[startup] ADMIN_PASSWORD : ${process.env.ADMIN_PASSWORD ? "configured" : "NOT SET"}`);
+
   server.listen(PORT, "0.0.0.0", () => {
     console.log(`Server listening on port ${PORT}`);
   });
