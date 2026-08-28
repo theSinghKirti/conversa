@@ -10,10 +10,14 @@ const {
   approveApplication,
   rejectApplication,
   resendActivationInvite,
+  listUsers,
 } = require("../Controllers/admin-controller.js");
 
 // All admin routes require a valid JWT (fetchuser) AND ADMIN role (requireAdmin)
 const adminGuard = [fetchuser, requireAdmin];
+
+// GET /admin/users                 – list registered users
+router.get("/users", adminGuard, listUsers);
 
 // GET /admin/applications          – list applications with filter/search/pagination
 router.get("/applications", adminGuard, listApplications);

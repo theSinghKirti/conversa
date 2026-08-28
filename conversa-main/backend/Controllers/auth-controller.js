@@ -42,6 +42,7 @@ const register = async (req, res) => {
       password: secPass,
       profilePic: imageUrl,
       about: "Hello World!!",
+      isEmailVerified: true,
     });
 
     // Write 2: create the dedicated bot user for this account.

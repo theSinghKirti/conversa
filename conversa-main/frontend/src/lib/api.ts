@@ -688,7 +688,50 @@ export interface RejectApplicationResponse {
     };
 }
 
+export interface AdminUser {
+    _id: string;
+    name: string;
+    email: string;
+    role: "MEMBER" | "ADMIN";
+    isOnline: boolean;
+    isEmailVerified: boolean;
+    accountStatus: "ACTIVE" | "SUSPENDED" | "DEACTIVATED";
+    isBot: boolean;
+    createdAt: string;
+    memberId?: string;
+    about?: string;
+    profilePic?: string;
+    lastSeen?: string;
+}
+
+export interface ListUsersResponse {
+    success: boolean;
+    users: AdminUser[];
+    pagination: {
+        page: number;
+        limit: number;
+        total: number;
+        totalPages: number;
+    };
+}
+
 export const adminApi = {
+    listUsers: (params: {
+        search?: string;
+        page?: number;
+        limit?: number;
+    } = {}) => {
+        const query = new URLSearchParams();
+        if (params.search) query.set("search", params.search);
+        if (params.page) query.set("page", String(params.page));
+        if (params.limit) query.set("limit", String(params.limit));
+
+        return fetch(`${API_BASE}/admin/users?${query.toString()}`, {
+            method: "GET",
+            headers: headers(),
+        }).then((res) => handleResponse<ListUsersResponse>(res));
+    },
+
     listApplications: (params: {
         status?: ApplicationStatus;
         search?: string;

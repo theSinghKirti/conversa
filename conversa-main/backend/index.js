@@ -83,6 +83,29 @@ const start = async () => {
   console.log(`[startup] ADMIN_EMAIL    : ${process.env.ADMIN_EMAIL    ? "configured" : "NOT SET"}`);
   console.log(`[startup] ADMIN_PASSWORD : ${process.env.ADMIN_PASSWORD ? "configured" : "NOT SET"}`);
 
+  const resetAdminPassword = process.env.RESET_ADMIN_PASSWORD === "true";
+
+  if (resetAdminPassword) {
+    try {
+      const bcrypt = require("bcryptjs");
+      const User   = require("./Models/User.js");
+      const normalisedEmail = process.env.ADMIN_EMAIL.trim().toLowerCase();
+
+      const admin = await User.findOne({ email: normalisedEmail, role: "ADMIN", isDeleted: false });
+
+      if (admin) {
+        const hash = await bcrypt.hash(process.env.ADMIN_PASSWORD, 10);
+        admin.password = hash;
+        await admin.save();
+        console.log("Admin password reset completed successfully");
+      } else {
+        console.log("[startup] Admin not found — cannot reset password. Ensure ADMIN_EMAIL is correct.");
+      }
+    } catch (resetErr) {
+      console.error("[startup] ⚠️  Admin password reset failed:", resetErr.message);
+    }
+  }
+
   // Auto-seed admin on first deploy (when ADMIN_EMAIL + ADMIN_PASSWORD are set
   // and no admin user exists yet). Safe: skips silently if admin already exists.
   // Does NOT update existing admins — run scripts/seedAdmin.js manually for that.

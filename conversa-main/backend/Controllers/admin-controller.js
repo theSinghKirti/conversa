@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const MembershipApplication = require("../Models/MembershipApplication.js");
+const User = require("../Models/User.js");
 const sendActivationInvite = require("../utils/sendActivationInvite.js");
 
 /* ─── helpers ─────────────────────────────────────────────────────────────── */
@@ -375,10 +376,74 @@ const resendActivationInvite = async (req, res) => {
   }
 };
 
+/**
+ * GET /admin/users
+ *
+ * Query params:
+ *   search – search name, email, memberId
+ *   page   – page number (default 1)
+ *   limit  – page size (default 20, max 50)
+ *
+ * Returns registered users sorted newest first, selecting ONLY safe non-sensitive fields.
+ */
+const listUsers = async (req, res) => {
+  try {
+    const { search } = req.query;
+
+    let page = parseInt(req.query.page, 10);
+    let limit = parseInt(req.query.limit, 10);
+    if (isNaN(page) || page < 1) page = 1;
+    if (isNaN(limit) || limit < 1) limit = 20;
+    if (limit > 50) limit = 50;
+    const skip = (page - 1) * limit;
+
+    const filter = { isDeleted: { $ne: true } };
+
+    if (search && typeof search === "string" && search.trim() !== "") {
+      const escaped = search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const re = new RegExp(escaped, "i");
+      filter.$or = [
+        { name: { $regex: re } },
+        { email: { $regex: re } },
+        { memberId: { $regex: re } },
+      ];
+    }
+
+    const [users, total] = await Promise.all([
+      User.find(filter)
+        .select(
+          "_id name email role isOnline isEmailVerified accountStatus isBot createdAt memberId about profilePic lastSeen"
+        )
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      User.countDocuments(filter),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      users,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    });
+  } catch (error) {
+    console.error("listUsers error:", error.message);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to fetch user directory list",
+    });
+  }
+};
+
 module.exports = {
   listApplications,
   getApplicationDetail,
   approveApplication,
   rejectApplication,
   resendActivationInvite,
+  listUsers,
 };
