@@ -6,7 +6,6 @@ import {
     Users,
     FileX,
     Inbox,
-    AlertOctagon,
     Shield,
     Clock,
     MailWarning,
@@ -16,8 +15,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { adminApi, adminInboxApi } from "@/lib/api";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { adminApi } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 
 export default function AdminDashboardOverview() {
@@ -25,47 +24,45 @@ export default function AdminDashboardOverview() {
     const navigate = useNavigate();
 
     const [stats, setStats] = useState({
-        pendingCount: 0,
-        approvedCount: 0,
-        activeCount: 0,
-        rejectedCount: 0,
-        unreadInboxCount: 0, // active posts count since unread tracking is missing
-        failedActivationCount: 0 // counted from APPROVED_PENDING_VERIFICATION items
+        pendingApplications: 0,
+        approvedApplications: 0,
+        activeMembers: 0,
+        rejectedApplications: 0,
+        inboxPosts: 0,
+        failedActivations: null as number | null,
+        failedActivationsAvailable: false
     });
+
     const [isLoading, setIsLoading] = useState(true);
+    const [isRefreshing, setIsRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const loadStats = async () => {
-        setIsLoading(true);
+    const loadStats = async (isRefresh = false) => {
+        if (isRefresh) {
+            setIsRefreshing(true);
+        } else {
+            setIsLoading(true);
+        }
         setError(null);
-        try {
-            // Fetch counts by making parallel requests with limit=1 to read pagination.total
-            const [pendingData, approvedData, activeData, rejectedData, inboxData] = await Promise.all([
-                adminApi.listApplications({ status: "PENDING", limit: 1 }),
-                adminApi.listApplications({ status: "APPROVED_PENDING_VERIFICATION", limit: 50 }), // Load approved to count failures
-                adminApi.listApplications({ status: "ACTIVE", limit: 1 }),
-                adminApi.listApplications({ status: "REJECTED", limit: 1 }),
-                adminInboxApi.listPosts({ status: "ACTIVE", limit: 1 })
-            ]);
 
-            // Count activation failures in loaded approved applications
-            const failedEmailsCount = approvedData.applications.filter(
-                (app) => app.activationInviteStatus === "FAILED"
-            ).length;
+        try {
+            const res = await adminApi.getStats();
+            const data = res.data || res;
 
             setStats({
-                pendingCount: pendingData.pagination.total,
-                approvedCount: approvedData.pagination.total,
-                activeCount: activeData.pagination.total,
-                rejectedCount: rejectedData.pagination.total,
-                unreadInboxCount: inboxData.pagination.total, // fallback to active posts
-                failedActivationCount: failedEmailsCount
+                pendingApplications: data.pendingApplications ?? 0,
+                approvedApplications: data.approvedApplications ?? 0,
+                activeMembers: data.activeMembers ?? 0,
+                rejectedApplications: data.rejectedApplications ?? 0,
+                inboxPosts: data.inboxPosts ?? 0,
+                failedActivations: data.failedActivations ?? null,
+                failedActivationsAvailable: Boolean(data.failedActivationsAvailable)
             });
         } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : "Failed to load dashboard summary stats.";
-            setError(msg);
+            setError("Unable to load dashboard statistics. Please try refreshing.");
         } finally {
             setIsLoading(false);
+            setIsRefreshing(false);
         }
     };
 
@@ -77,7 +74,7 @@ export default function AdminDashboardOverview() {
         return (
             <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-4">
                 <Loader2 className="animate-spin text-primary size-8" />
-                <p className="text-sm text-muted-foreground font-medium">Aggregating summary data...</p>
+                <p className="text-sm text-muted-foreground font-medium">Loading dashboard statistics...</p>
             </div>
         );
     }
@@ -96,34 +93,27 @@ export default function AdminDashboardOverview() {
                         Manage community directories, inspect applications, and moderate posts.
                     </p>
                 </div>
-                <Button onClick={loadStats} variant="outline" className="self-start gap-2">
-                    <Clock className="size-4" />
+                <Button onClick={() => loadStats(true)} disabled={isRefreshing} variant="outline" className="self-start gap-2">
+                    {isRefreshing ? <Loader2 className="size-4 animate-spin" /> : <Clock className="size-4" />}
                     <span>Refresh Stats</span>
                 </Button>
             </div>
 
-            {/* Missing Backend stats Alert */}
-            <Alert className="bg-amber-500/10 border-amber-500/20 text-amber-800 dark:text-amber-300">
-                <AlertOctagon className="size-5 text-amber-600 dark:text-amber-400" />
-                <AlertTitle className="font-semibold text-sm">API Endpoint Availability Notice</AlertTitle>
-                <AlertDescription className="text-xs leading-relaxed mt-1">
-                    A dedicated backend summary statistics endpoint (e.g. <code>GET /admin/stats</code>) does not exist.
-                    Stats are dynamically compiled on the client. Unread inbox count displays total active posts (no read/unread endpoint exists), and failed email activations are sampled from the approved applications list.
-                </AlertDescription>
-            </Alert>
-
+            {/* Error Alert */}
             {error && (
                 <Alert variant="destructive">
                     <AlertDescription className="flex items-center justify-between">
                         <span>{error}</span>
-                        <Button size="sm" variant="ghost" onClick={loadStats} className="text-white hover:text-white/80">Retry</Button>
+                        <Button size="sm" variant="ghost" onClick={() => loadStats(true)} className="text-white hover:text-white/80">
+                            Retry
+                        </Button>
                     </AlertDescription>
                 </Alert>
             )}
 
             {/* Dashboard Summary Cards */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {/* Pending */}
+                {/* Pending Applications */}
                 <Card 
                     className="hover:shadow-md transition-shadow cursor-pointer border-l-4 border-l-amber-500 bg-card"
                     onClick={() => navigate("/admin/applications?status=PENDING")}
@@ -138,7 +128,7 @@ export default function AdminDashboardOverview() {
                         </div>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-3xl font-extrabold tracking-tight">{stats.pendingCount}</div>
+                        <div className="text-3xl font-extrabold tracking-tight">{stats.pendingApplications}</div>
                         <div className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 mt-2 font-medium">
                             <span>Requires verification decision</span>
                             <ArrowRight className="size-3" />
@@ -161,7 +151,7 @@ export default function AdminDashboardOverview() {
                         </div>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-3xl font-extrabold tracking-tight">{stats.approvedCount}</div>
+                        <div className="text-3xl font-extrabold tracking-tight">{stats.approvedApplications}</div>
                         <div className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 mt-2 font-medium">
                             <span>Waiting for member OTP validation</span>
                             <ArrowRight className="size-3" />
@@ -184,7 +174,7 @@ export default function AdminDashboardOverview() {
                         </div>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-3xl font-extrabold tracking-tight">{stats.activeCount}</div>
+                        <div className="text-3xl font-extrabold tracking-tight">{stats.activeMembers}</div>
                         <div className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 mt-2 font-medium">
                             <span>View profile list directory</span>
                             <ArrowRight className="size-3" />
@@ -192,7 +182,7 @@ export default function AdminDashboardOverview() {
                     </CardContent>
                 </Card>
 
-                {/* Rejected */}
+                {/* Rejected Applications */}
                 <Card 
                     className="hover:shadow-md transition-shadow cursor-pointer border-l-4 border-l-rose-500 bg-card"
                     onClick={() => navigate("/admin/applications?status=REJECTED")}
@@ -207,7 +197,7 @@ export default function AdminDashboardOverview() {
                         </div>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-3xl font-extrabold tracking-tight">{stats.rejectedCount}</div>
+                        <div className="text-3xl font-extrabold tracking-tight">{stats.rejectedApplications}</div>
                         <div className="flex items-center gap-1 text-xs text-rose-600 dark:text-rose-400 mt-2 font-medium">
                             <span>Review rejection histories</span>
                             <ArrowRight className="size-3" />
@@ -215,7 +205,7 @@ export default function AdminDashboardOverview() {
                     </CardContent>
                 </Card>
 
-                {/* Inbox Count */}
+                {/* Inbox Posts */}
                 <Card 
                     className="hover:shadow-md transition-shadow cursor-pointer border-l-4 border-l-indigo-500 bg-card"
                     onClick={() => navigate("/admin/inbox")}
@@ -230,7 +220,7 @@ export default function AdminDashboardOverview() {
                         </div>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-3xl font-extrabold tracking-tight">{stats.unreadInboxCount}</div>
+                        <div className="text-3xl font-extrabold tracking-tight">{stats.inboxPosts}</div>
                         <div className="flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 mt-2 font-medium">
                             <span>Moderate feed messages</span>
                             <ArrowRight className="size-3" />
@@ -253,7 +243,11 @@ export default function AdminDashboardOverview() {
                         </div>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-3xl font-extrabold tracking-tight text-destructive">{stats.failedActivationCount}</div>
+                        <div className={`text-3xl font-extrabold tracking-tight ${stats.failedActivationsAvailable && stats.failedActivations && stats.failedActivations > 0 ? "text-destructive" : ""}`}>
+                            {stats.failedActivationsAvailable && stats.failedActivations !== null
+                                ? stats.failedActivations
+                                : "Not available"}
+                        </div>
                         <div className="flex items-center gap-1 text-xs text-muted-foreground mt-2 font-medium">
                             <span>Resend invite from application page</span>
                             <ArrowRight className="size-3" />

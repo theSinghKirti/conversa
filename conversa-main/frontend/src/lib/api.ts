@@ -715,7 +715,35 @@ export interface ListUsersResponse {
     };
 }
 
+export interface AdminStats {
+    pendingApplications: number;
+    approvedApplications: number;
+    activeMembers: number;
+    rejectedApplications: number;
+    inboxPosts: number;
+    failedActivations: number | null;
+    failedActivationsAvailable: boolean;
+}
+
+export interface GetStatsResponse {
+    success: boolean;
+    data?: AdminStats;
+    pendingApplications?: number;
+    approvedApplications?: number;
+    activeMembers?: number;
+    rejectedApplications?: number;
+    inboxPosts?: number;
+    failedActivations?: number | null;
+    failedActivationsAvailable?: boolean;
+}
+
 export const adminApi = {
+    getStats: () =>
+        fetch(`${API_BASE}/admin/stats`, {
+            method: "GET",
+            headers: headers(),
+        }).then((res) => handleResponse<GetStatsResponse>(res)),
+
     listUsers: (params: {
         search?: string;
         page?: number;

@@ -11,10 +11,14 @@ const {
   rejectApplication,
   resendActivationInvite,
   listUsers,
+  getStats,
 } = require("../Controllers/admin-controller.js");
 
 // All admin routes require a valid JWT (fetchuser) AND ADMIN role (requireAdmin)
 const adminGuard = [fetchuser, requireAdmin];
+
+// GET /admin/stats                 – aggregate admin summary statistics
+router.get("/stats", adminGuard, getStats);
 
 // GET /admin/users                 – list registered users
 router.get("/users", adminGuard, listUsers);

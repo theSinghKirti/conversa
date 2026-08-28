@@ -439,6 +439,62 @@ const listUsers = async (req, res) => {
   }
 };
 
+/**
+ * GET /admin/stats
+ *
+ * Aggregate Admin Dashboard Overview statistics from MongoDB:
+ * - pendingApplications: MembershipApplication count with status "PENDING"
+ * - approvedApplications: MembershipApplication count with status "APPROVED_PENDING_VERIFICATION"
+ * - activeMembers: User count with role "MEMBER", isDeleted false, accountStatus "ACTIVE", isBot false
+ * - rejectedApplications: MembershipApplication count with status "REJECTED"
+ * - inboxPosts: CommunityPost count with status "ACTIVE"
+ * - failedActivations: MembershipApplication count with activationInviteStatus "FAILED"
+ * - failedActivationsAvailable: true
+ */
+const getStats = async (req, res) => {
+  try {
+    const { CommunityPost } = require("../Models/CommunityPost.js");
+
+    const [
+      pendingApplications,
+      approvedApplications,
+      activeMembers,
+      rejectedApplications,
+      inboxPosts,
+      failedActivations,
+    ] = await Promise.all([
+      MembershipApplication.countDocuments({ status: "PENDING" }),
+      MembershipApplication.countDocuments({ status: "APPROVED_PENDING_VERIFICATION" }),
+      User.countDocuments({ role: "MEMBER", isDeleted: { $ne: true }, accountStatus: "ACTIVE", isBot: { $ne: true } }),
+      MembershipApplication.countDocuments({ status: "REJECTED" }),
+      CommunityPost.countDocuments({ status: "ACTIVE" }),
+      MembershipApplication.countDocuments({ activationInviteStatus: "FAILED" }),
+    ]);
+
+    const statsData = {
+      pendingApplications,
+      approvedApplications,
+      activeMembers,
+      rejectedApplications,
+      inboxPosts,
+      failedActivations,
+      failedActivationsAvailable: true,
+    };
+
+    return res.status(200).json({
+      success: true,
+      data: statsData,
+      ...statsData,
+    });
+  } catch (error) {
+    console.error("getStats error:", error.message);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to fetch dashboard statistics",
+    });
+  }
+};
+
 module.exports = {
   listApplications,
   getApplicationDetail,
@@ -446,4 +502,5 @@ module.exports = {
   rejectApplication,
   resendActivationInvite,
   listUsers,
+  getStats,
 };
