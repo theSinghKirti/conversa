@@ -219,6 +219,16 @@ const approveApplication = async (req, res) => {
     }
     await updated.save();
 
+    try {
+      const AuditLog = require("../Models/AuditLog.js");
+      await AuditLog.create({
+        actor: `${req.user.name || "Admin"} (${req.user.email || "admin"})`,
+        action: "APPROVE_APPLICATION",
+        target: `${updated.memberId || updated.applicationId} (${updated.email})`,
+        status: "SUCCESS",
+      });
+    } catch (logErr) {}
+
     return res.status(200).json({
       success: true,
       message: emailSent
@@ -294,6 +304,16 @@ const rejectApplication = async (req, res) => {
       });
     }
 
+    try {
+      const AuditLog = require("../Models/AuditLog.js");
+      await AuditLog.create({
+        actor: `${req.user.name || "Admin"} (${req.user.email || "admin"})`,
+        action: "REJECT_APPLICATION",
+        target: `${updated.applicationId} (${reason.trim().slice(0, 30)})`,
+        status: "SUCCESS",
+      });
+    } catch (logErr) {}
+
     return res.status(200).json({
       success: true,
       message: "Application rejected.",
@@ -346,6 +366,17 @@ const resendActivationInvite = async (req, res) => {
 
     // Try sending email
     const emailResult = await sendActivationInvite(application);
+    
+    try {
+      const AuditLog = require("../Models/AuditLog.js");
+      await AuditLog.create({
+        actor: `${req.user.name || "Admin"} (${req.user.email || "admin"})`,
+        action: "RESEND_ACTIVATION_EMAIL",
+        target: `${application.memberId || application.applicationId} (${application.email})`,
+        status: emailResult.success ? "SUCCESS" : "FAILED",
+      });
+    } catch (logErr) {}
+
     if (emailResult.success) {
       application.activationInviteStatus = "SENT";
       application.activationInviteSentAt = now;
@@ -567,6 +598,16 @@ const createEmergencyBroadcast = async (req, res) => {
       console.warn("Socket broadcast emit warning:", socketErr.message);
     }
 
+    try {
+      const AuditLog = require("../Models/AuditLog.js");
+      await AuditLog.create({
+        actor: `${req.user.name || "Admin"} (${req.user.email || "admin"})`,
+        action: "CREATE_EMERGENCY_BROADCAST",
+        target: `${broadcast.alertId} (${broadcast.title})`,
+        status: "SUCCESS",
+      });
+    } catch (logErr) {}
+
     return res.status(201).json({
       success: true,
       message: "Emergency broadcast sent successfully",
@@ -659,6 +700,50 @@ const listSecurityLogs = async (req, res) => {
   }
 };
 
+/**
+ * GET /admin/audit-logs
+ * Returns system audit logs sorted newest first.
+ */
+const listAuditLogs = async (req, res) => {
+  try {
+    const AuditLog = require("../Models/AuditLog.js");
+    let logs = await AuditLog.find()
+      .sort({ createdAt: -1 })
+      .limit(100);
+
+    if (logs.length === 0) {
+      await AuditLog.create({
+        actor: `${req.user.name || "Admin"} (${req.user.email || "admin"})`,
+        action: "SYSTEM_AUDIT_LOG_INITIALIZED",
+        target: "GET /admin/audit-logs (System audit history online)",
+        status: "SUCCESS",
+      });
+
+      logs = await AuditLog.find().sort({ createdAt: -1 }).limit(100);
+    }
+
+    return res.status(200).json({
+      success: true,
+      logs: logs.map((log) => ({
+        id: log.logId || `AUD-${log._id.toString().slice(-4).toUpperCase()}`,
+        logId: log.logId,
+        actor: log.actor || "System Admin",
+        action: log.action,
+        target: log.target || "System",
+        status: log.status || "SUCCESS",
+        timestamp: log.createdAt,
+        createdAt: log.createdAt,
+      })),
+    });
+  } catch (error) {
+    console.error("listAuditLogs error:", error.message);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to fetch audit logs",
+    });
+  }
+};
+
 module.exports = {
   listApplications,
   getApplicationDetail,
@@ -671,4 +756,5 @@ module.exports = {
   createEmergencyBroadcast,
   deleteEmergencyBroadcast,
   listSecurityLogs,
+  listAuditLogs,
 };

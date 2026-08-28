@@ -1,8 +1,10 @@
+import { useState, useEffect, useCallback } from "react";
 import { History, ShieldAlert, RotateCw, Download, FileSpreadsheet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
     Table,
     TableBody,
@@ -11,57 +13,59 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
-
-// Mock audit log history
-const MOCK_AUDIT_LOGS = [
-    {
-        id: "AUD-9912",
-        actor: "Admin (administrator@example.com)",
-        action: "APPROVE_APPLICATION",
-        target: "MEM-8K4P2Q (applicant@example.com)",
-        timestamp: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-        status: "SUCCESS"
-    },
-    {
-        id: "AUD-9883",
-        actor: "Admin (administrator@example.com)",
-        action: "REJECT_APPLICATION",
-        target: "APP-09412 (fake_user@example.com)",
-        timestamp: new Date(Date.now() - 150 * 60 * 1000).toISOString(),
-        status: "SUCCESS"
-    },
-    {
-        id: "AUD-9871",
-        actor: "System Scheduler",
-        action: "STALE_USERS_CLEANUP",
-        target: "System database",
-        timestamp: new Date(Date.now() - 360 * 60 * 1000).toISOString(),
-        status: "SUCCESS"
-    },
-    {
-        id: "AUD-9840",
-        actor: "Admin (administrator@example.com)",
-        action: "HIDE_POST",
-        target: "POST-89U1LA (Violative text content)",
-        timestamp: new Date(Date.now() - 24 * 3600 * 1000).toISOString(),
-        status: "SUCCESS"
-    },
-    {
-        id: "AUD-9811",
-        actor: "Admin (administrator@example.com)",
-        action: "RESEND_ACTIVATION_EMAIL",
-        target: "MEM-9A3X2P (applicant2@example.com)",
-        timestamp: new Date(Date.now() - 28 * 3600 * 1000).toISOString(),
-        status: "FAILED"
-    }
-];
+import { adminApi } from "@/lib/api";
+import type { AuditLog } from "@/lib/api";
 
 export default function AdminAuditLogs() {
+    const [logs, setLogs] = useState<AuditLog[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    const fetchLogs = useCallback(async () => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            const data = await adminApi.listAuditLogs();
+            setLogs(data.logs || []);
+        } catch (err: unknown) {
+            setError("Unable to load audit logs. Please refresh.");
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchLogs();
+    }, [fetchLogs]);
+
+    const handleExportCsv = () => {
+        if (logs.length === 0) return;
+        const csvHeaders = ["Log ID", "Actor", "Action", "Target Entity", "Timestamp", "Status"];
+        const csvRows = logs.map((log) => [
+            log.id || log.logId || "",
+            `"${(log.actor || "").replace(/"/g, '""')}"`,
+            log.action || "",
+            `"${(log.target || "").replace(/"/g, '""')}"`,
+            log.timestamp || log.createdAt || "",
+            log.status || "SUCCESS",
+        ]);
+
+        const csvContent = [csvHeaders.join(","), ...csvRows.map((r) => r.join(","))].join("\n");
+        const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `conversa-audit-logs-${new Date().toISOString().slice(0, 10)}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     const formatDate = (iso: string) => {
         try {
             return new Intl.DateTimeFormat("en-IN", {
                 dateStyle: "medium",
-                timeStyle: "short"
+                timeStyle: "short",
             }).format(new Date(iso));
         } catch {
             return iso;
@@ -82,26 +86,28 @@ export default function AdminAuditLogs() {
                     </p>
                 </div>
                 <div className="flex gap-2 self-start">
-                    <Button variant="outline" className="gap-2" disabled>
+                    <Button variant="outline" className="gap-2" onClick={handleExportCsv} disabled={isLoading || logs.length === 0}>
                         <Download className="size-4" />
                         <span>Export CSV</span>
                     </Button>
-                    <Button variant="outline" className="gap-2" disabled>
-                        <RotateCw className="size-4" />
+                    <Button variant="outline" className="gap-2" onClick={fetchLogs} disabled={isLoading}>
+                        <RotateCw className={`size-4 ${isLoading ? "animate-spin" : ""}`} />
                         <span>Refresh</span>
                     </Button>
                 </div>
             </div>
 
-            {/* Warning Alert: Missing Endpoint */}
-            <Alert className="bg-amber-500/10 border-amber-500/20 text-amber-800 dark:text-amber-300">
-                <ShieldAlert className="size-5 text-amber-600 dark:text-amber-400" />
-                <AlertTitle className="font-semibold text-sm">Missing Backend API Endpoint</AlertTitle>
-                <AlertDescription className="text-xs leading-relaxed mt-1">
-                    The backend endpoint for fetching system audit logs (e.g. <code>GET /admin/audit-logs</code>) is currently missing or not implemented.
-                    Showing offline layout preview with mock action logs.
-                </AlertDescription>
-            </Alert>
+            {/* Error Alert */}
+            {error && (
+                <Alert variant="destructive">
+                    <AlertDescription className="flex items-center justify-between">
+                        <span>{error}</span>
+                        <Button size="sm" variant="ghost" onClick={fetchLogs} className="text-white hover:text-white/80">
+                            Retry
+                        </Button>
+                    </AlertDescription>
+                </Alert>
+            )}
 
             {/* Logs Table */}
             <Card className="flex-1 min-h-0 flex flex-col">
@@ -113,49 +119,66 @@ export default function AdminAuditLogs() {
                     <CardDescription>Administrative audit trail database events</CardDescription>
                 </CardHeader>
                 <CardContent className="p-0 overflow-auto thin-scrollbar">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Log ID</TableHead>
-                                <TableHead>Actor</TableHead>
-                                <TableHead>Action</TableHead>
-                                <TableHead>Target Entity</TableHead>
-                                <TableHead>Timestamp</TableHead>
-                                <TableHead>Status</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {MOCK_AUDIT_LOGS.map((log) => (
-                                <TableRow key={log.id}>
-                                    <TableCell className="font-mono text-xs font-semibold">{log.id}</TableCell>
-                                    <TableCell className="text-xs font-medium">{log.actor}</TableCell>
-                                    <TableCell>
-                                        <Badge variant="secondary" className="text-[10px] font-semibold font-mono uppercase">
-                                            {log.action}
-                                        </Badge>
-                                    </TableCell>
-                                    <TableCell className="text-xs font-mono max-w-[200px] truncate" title={log.target}>
-                                        {log.target}
-                                    </TableCell>
-                                    <TableCell className="text-[10px] text-muted-foreground whitespace-nowrap">
-                                        {formatDate(log.timestamp)}
-                                    </TableCell>
-                                    <TableCell>
-                                        <Badge
-                                            variant="outline"
-                                            className={
-                                                log.status === "SUCCESS"
-                                                    ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[10px]"
-                                                    : "bg-rose-500/10 text-rose-600 border-rose-500/20 text-[10px]"
-                                            }
-                                        >
-                                            {log.status}
-                                        </Badge>
-                                    </TableCell>
+                    {isLoading ? (
+                        <div className="space-y-3 p-6">
+                            <Skeleton className="h-6 w-full" />
+                            <Skeleton className="h-12 w-full" />
+                            <Skeleton className="h-12 w-full" />
+                            <Skeleton className="h-12 w-full" />
+                        </div>
+                    ) : logs.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center p-12 text-center text-muted-foreground space-y-3">
+                            <ShieldAlert className="size-12 text-muted-foreground" strokeWidth={1.5} />
+                            <p className="text-lg font-medium">No audit logs available yet</p>
+                            <p className="text-xs max-w-sm">
+                                Administrative actions such as approvals, rejections, and broadcasts will automatically record here.
+                            </p>
+                        </div>
+                    ) : (
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Log ID</TableHead>
+                                    <TableHead>Actor</TableHead>
+                                    <TableHead>Action</TableHead>
+                                    <TableHead>Target Entity</TableHead>
+                                    <TableHead>Timestamp</TableHead>
+                                    <TableHead>Status</TableHead>
                                 </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
+                            </TableHeader>
+                            <TableBody>
+                                {logs.map((log) => (
+                                    <TableRow key={log.id || log._id}>
+                                        <TableCell className="font-mono text-xs font-semibold">{log.id || log.logId}</TableCell>
+                                        <TableCell className="text-xs font-medium">{log.actor}</TableCell>
+                                        <TableCell>
+                                            <Badge variant="secondary" className="text-[10px] font-semibold font-mono uppercase">
+                                                {log.action}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell className="text-xs font-mono max-w-[200px] truncate" title={log.target}>
+                                            {log.target}
+                                        </TableCell>
+                                        <TableCell className="text-[9px] text-muted-foreground whitespace-nowrap">
+                                            {formatDate(log.timestamp || log.createdAt || "")}
+                                        </TableCell>
+                                        <TableCell>
+                                            <Badge
+                                                variant="outline"
+                                                className={
+                                                    log.status === "SUCCESS"
+                                                        ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[10px]"
+                                                        : "bg-rose-500/10 text-rose-600 border-rose-500/20 text-[10px]"
+                                                }
+                                            >
+                                                {log.status}
+                                            </Badge>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    )}
                 </CardContent>
             </Card>
         </div>

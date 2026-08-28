@@ -779,7 +779,30 @@ export interface ListSecurityLogsResponse {
     logs: SecurityLog[];
 }
 
+export interface AuditLog {
+    _id?: string;
+    id: string;
+    logId?: string;
+    actor: string;
+    action: string;
+    target: string;
+    status: "SUCCESS" | "FAILED";
+    timestamp: string;
+    createdAt?: string;
+}
+
+export interface ListAuditLogsResponse {
+    success: boolean;
+    logs: AuditLog[];
+}
+
 export const adminApi = {
+    listAuditLogs: () =>
+        fetch(`${API_BASE}/admin/audit-logs`, {
+            method: "GET",
+            headers: headers(),
+        }).then((res) => handleResponse<ListAuditLogsResponse>(res)),
+
     listSecurityLogs: () =>
         fetch(`${API_BASE}/admin/security-logs`, {
             method: "GET",
