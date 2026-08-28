@@ -15,10 +15,14 @@ const {
   listEmergencyBroadcasts,
   createEmergencyBroadcast,
   deleteEmergencyBroadcast,
+  listSecurityLogs,
 } = require("../Controllers/admin-controller.js");
 
 // All admin routes require a valid JWT (fetchuser) AND ADMIN role (requireAdmin)
 const adminGuard = [fetchuser, requireAdmin];
+
+// GET /admin/security-logs         – list security event logs
+router.get("/security-logs", adminGuard, listSecurityLogs);
 
 // GET /admin/emergency-messages   – list emergency broadcasts
 router.get("/emergency-messages", adminGuard, listEmergencyBroadcasts);

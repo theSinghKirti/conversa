@@ -147,6 +147,18 @@ const login = async (req, res) => {
       }
       const passwordCompare = await bcrypt.compare(password, user.password);
       if (!passwordCompare) {
+        try {
+          const SecurityLog = require("../Models/SecurityLog.js");
+          await SecurityLog.create({
+            actor: normalisedEmail,
+            action: "FAILED_LOGIN_ATTEMPT",
+            target: "POST /auth/login (Invalid password match)",
+            severity: "HIGH",
+            status: "BLOCKED",
+            ipAddress: req.ip || req.headers["x-forwarded-for"] || "127.0.0.1",
+          });
+        } catch (logErr) {}
+
         return res.status(400).json({
           error: "Invalid Credentials",
         });
@@ -160,6 +172,18 @@ const login = async (req, res) => {
     };
 
     const authtoken = jwt.sign(data, JWT_SECRET, { expiresIn: "7d" });
+
+    try {
+      const SecurityLog = require("../Models/SecurityLog.js");
+      await SecurityLog.create({
+        actor: `${user.name} (${user.email})`,
+        action: user.role === "ADMIN" ? "SUCCESSFUL_ADMIN_LOGIN" : "SUCCESSFUL_USER_LOGIN",
+        target: "POST /auth/login (JWT authtoken generated)",
+        severity: "INFO",
+        status: "ALLOWED",
+        ipAddress: req.ip || req.headers["x-forwarded-for"] || "127.0.0.1",
+      });
+    } catch (logErr) {}
 
     res.json({
       authtoken,

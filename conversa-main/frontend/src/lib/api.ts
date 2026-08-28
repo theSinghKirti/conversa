@@ -760,7 +760,32 @@ export interface CreateEmergencyBroadcastPayload {
     targetGroup?: string;
 }
 
+export interface SecurityLog {
+    _id?: string;
+    id: string;
+    logId?: string;
+    ipAddress: string;
+    actor: string;
+    action: string;
+    target: string;
+    severity: "INFO" | "MEDIUM" | "HIGH" | "WARNING" | "CRITICAL";
+    status: "SUCCESS" | "ALLOWED" | "BLOCKED" | "FAILED";
+    timestamp: string;
+    createdAt?: string;
+}
+
+export interface ListSecurityLogsResponse {
+    success: boolean;
+    logs: SecurityLog[];
+}
+
 export const adminApi = {
+    listSecurityLogs: () =>
+        fetch(`${API_BASE}/admin/security-logs`, {
+            method: "GET",
+            headers: headers(),
+        }).then((res) => handleResponse<ListSecurityLogsResponse>(res)),
+
     getEmergencyBroadcasts: () =>
         fetch(`${API_BASE}/admin/emergency-messages`, {
             method: "GET",

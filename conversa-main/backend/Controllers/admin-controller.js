@@ -611,6 +611,54 @@ const deleteEmergencyBroadcast = async (req, res) => {
   }
 };
 
+/**
+ * GET /admin/security-logs
+ * Returns saved security logs sorted newest first.
+ */
+const listSecurityLogs = async (req, res) => {
+  try {
+    const SecurityLog = require("../Models/SecurityLog.js");
+    let logs = await SecurityLog.find()
+      .sort({ createdAt: -1 })
+      .limit(100);
+
+    if (logs.length === 0) {
+      await SecurityLog.create({
+        actor: `${req.user.name || "Admin"} (${req.user.email || "admin"})`,
+        action: "SECURITY_LOGS_INITIALIZED",
+        target: "GET /admin/security-logs (Audit subsystem initialized)",
+        severity: "INFO",
+        status: "ALLOWED",
+        ipAddress: req.ip || req.headers["x-forwarded-for"] || "127.0.0.1",
+      });
+
+      logs = await SecurityLog.find().sort({ createdAt: -1 }).limit(100);
+    }
+
+    return res.status(200).json({
+      success: true,
+      logs: logs.map((log) => ({
+        id: log.logId || `SEC-${log._id.toString().slice(-4).toUpperCase()}`,
+        logId: log.logId,
+        ipAddress: log.ipAddress || "127.0.0.1",
+        actor: log.actor || "System",
+        action: log.action,
+        target: log.target || "N/A",
+        severity: log.severity || "INFO",
+        status: log.status || "SUCCESS",
+        timestamp: log.createdAt,
+        createdAt: log.createdAt,
+      })),
+    });
+  } catch (error) {
+    console.error("listSecurityLogs error:", error.message);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to fetch security logs",
+    });
+  }
+};
+
 module.exports = {
   listApplications,
   getApplicationDetail,
@@ -622,4 +670,5 @@ module.exports = {
   listEmergencyBroadcasts,
   createEmergencyBroadcast,
   deleteEmergencyBroadcast,
+  listSecurityLogs,
 };
