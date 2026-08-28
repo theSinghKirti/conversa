@@ -495,6 +495,122 @@ const getStats = async (req, res) => {
   }
 };
 
+/**
+ * GET /admin/emergency-messages
+ * Returns list of saved emergency broadcasts sorted newest first.
+ */
+const listEmergencyBroadcasts = async (req, res) => {
+  try {
+    const EmergencyBroadcast = require("../Models/EmergencyBroadcast.js");
+    const broadcasts = await EmergencyBroadcast.find()
+      .sort({ createdAt: -1 })
+      .limit(50);
+    return res.status(200).json({
+      success: true,
+      broadcasts,
+    });
+  } catch (error) {
+    console.error("listEmergencyBroadcasts error:", error.message);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to fetch emergency broadcasts history",
+    });
+  }
+};
+
+/**
+ * POST /admin/emergency-messages
+ * Creates and saves a new emergency broadcast.
+ */
+const createEmergencyBroadcast = async (req, res) => {
+  try {
+    const EmergencyBroadcast = require("../Models/EmergencyBroadcast.js");
+    const { getIo } = require("../socket/index.js");
+
+    const { title, message, severity = "CRITICAL", targetGroup = "All Active Members" } = req.body;
+
+    if (!title || typeof title !== "string" || !title.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: "Alert title is required",
+      });
+    }
+
+    if (!message || typeof message !== "string" || !message.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: "Message content is required",
+      });
+    }
+
+    const validSeverities = ["CRITICAL", "WARNING", "INFO"];
+    const normalizedSeverity = validSeverities.includes(severity?.toUpperCase())
+      ? severity.toUpperCase()
+      : "CRITICAL";
+
+    const broadcast = await EmergencyBroadcast.create({
+      title: title.trim(),
+      message: message.trim(),
+      severity: normalizedSeverity,
+      targetGroup: targetGroup?.trim() || "All Active Members",
+      createdBy: req.user.id,
+      senderName: req.user.name || "Security Admin",
+    });
+
+    // Re-use Socket.IO to emit emergency broadcast event to all connected sockets
+    try {
+      const io = getIo();
+      if (io) {
+        io.emit("emergency-broadcast", broadcast);
+      }
+    } catch (socketErr) {
+      console.warn("Socket broadcast emit warning:", socketErr.message);
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: "Emergency broadcast sent successfully",
+      broadcast,
+    });
+  } catch (error) {
+    console.error("createEmergencyBroadcast error:", error.message);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to dispatch emergency broadcast alert",
+    });
+  }
+};
+
+/**
+ * DELETE /admin/emergency-messages/:id
+ * Removes an emergency broadcast record.
+ */
+const deleteEmergencyBroadcast = async (req, res) => {
+  try {
+    const EmergencyBroadcast = require("../Models/EmergencyBroadcast.js");
+    const { id } = req.params;
+
+    const deleted = await EmergencyBroadcast.findByIdAndDelete(id);
+    if (!deleted) {
+      return res.status(404).json({
+        success: false,
+        error: "Emergency broadcast record not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Emergency broadcast deleted successfully",
+    });
+  } catch (error) {
+    console.error("deleteEmergencyBroadcast error:", error.message);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to delete emergency broadcast record",
+    });
+  }
+};
+
 module.exports = {
   listApplications,
   getApplicationDetail,
@@ -503,4 +619,7 @@ module.exports = {
   resendActivationInvite,
   listUsers,
   getStats,
+  listEmergencyBroadcasts,
+  createEmergencyBroadcast,
+  deleteEmergencyBroadcast,
 };

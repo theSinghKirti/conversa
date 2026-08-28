@@ -737,7 +737,49 @@ export interface GetStatsResponse {
     failedActivationsAvailable?: boolean;
 }
 
+export interface EmergencyBroadcast {
+    _id: string;
+    alertId: string;
+    title: string;
+    message: string;
+    severity: "CRITICAL" | "WARNING" | "INFO";
+    targetGroup: string;
+    senderName?: string;
+    createdAt: string;
+}
+
+export interface ListEmergencyBroadcastsResponse {
+    success: boolean;
+    broadcasts: EmergencyBroadcast[];
+}
+
+export interface CreateEmergencyBroadcastPayload {
+    title: string;
+    message: string;
+    severity: "CRITICAL" | "WARNING" | "INFO";
+    targetGroup?: string;
+}
+
 export const adminApi = {
+    getEmergencyBroadcasts: () =>
+        fetch(`${API_BASE}/admin/emergency-messages`, {
+            method: "GET",
+            headers: headers(),
+        }).then((res) => handleResponse<ListEmergencyBroadcastsResponse>(res)),
+
+    createEmergencyBroadcast: (payload: CreateEmergencyBroadcastPayload) =>
+        fetch(`${API_BASE}/admin/emergency-messages`, {
+            method: "POST",
+            headers: headers(),
+            body: JSON.stringify(payload),
+        }).then((res) => handleResponse<{ success: boolean; message: string; broadcast: EmergencyBroadcast }>(res)),
+
+    deleteEmergencyBroadcast: (id: string) =>
+        fetch(`${API_BASE}/admin/emergency-messages/${id}`, {
+            method: "DELETE",
+            headers: headers(),
+        }).then((res) => handleResponse<{ success: boolean; message: string }>(res)),
+
     getStats: () =>
         fetch(`${API_BASE}/admin/stats`, {
             method: "GET",

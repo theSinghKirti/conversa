@@ -12,10 +12,22 @@ const {
   resendActivationInvite,
   listUsers,
   getStats,
+  listEmergencyBroadcasts,
+  createEmergencyBroadcast,
+  deleteEmergencyBroadcast,
 } = require("../Controllers/admin-controller.js");
 
 // All admin routes require a valid JWT (fetchuser) AND ADMIN role (requireAdmin)
 const adminGuard = [fetchuser, requireAdmin];
+
+// GET /admin/emergency-messages   – list emergency broadcasts
+router.get("/emergency-messages", adminGuard, listEmergencyBroadcasts);
+
+// POST /admin/emergency-messages  – dispatch emergency broadcast
+router.post("/emergency-messages", adminGuard, createEmergencyBroadcast);
+
+// DELETE /admin/emergency-messages/:id – delete emergency broadcast record
+router.delete("/emergency-messages/:id", adminGuard, deleteEmergencyBroadcast);
 
 // GET /admin/stats                 – aggregate admin summary statistics
 router.get("/stats", adminGuard, getStats);
